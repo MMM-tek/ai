@@ -8,6 +8,7 @@
     <script src="./tf.min.js"></script>
     <script src="./mobilenet.min.js"></script>
     <script src="./toxicity.min.js"></script>
+    <script src="./speech-commands.min.js"></script>
 
     <style>
         * { box-sizing: border-box; }
@@ -106,31 +107,120 @@
 <body>
 
     <div id="chat-container">
-        <div class="message ai-msg">Hello! I am your local AI. You can type a message or upload an image to analyze it.</div>
+        <div class="message ai-msg">👋 Hola, soy Nexus AI. Estoy cargando todos mis modelos... Espera un momento.</div>
     </div>
 
     <div class="input-area">
         <div class="input-wrapper">
             <!-- Upload Button -->
-            <button class="btn-icon" onclick="document.getElementById('file-input').click()">📎</button>
+            <button class="btn-icon" onclick="document.getElementById('file-input').click()" title="Subir imagen">📎</button>
             <input type="file" id="file-input" accept="image/*">
             
+            <!-- Microphone Button -->
+            <button class="btn-icon" onclick="startVoiceRecognition()" title="Reconocimiento de voz">🎤</button>
+            
             <!-- Text Input -->
-            <textarea id="user-input" rows="1" placeholder="Send a message..."></textarea>
+            <textarea id="user-input" rows="1" placeholder="Escribe tu pregunta o mensaje..."></textarea>
             
             <!-- Send Button -->
-            <button class="btn-icon" onclick="handleSend()">➡️</button>
+            <button class="btn-icon" onclick="handleSend()" title="Enviar">➡️</button>
         </div>
     </div>
 
     <script>
-        let visionModel, toxicityModel;
+        let visionModel, toxicityModel, recognizer;
+        let isListening = false;
 
-        // Load models
+        // Base de conocimiento para responder preguntas
+        const knowledge = {
+            "hola": "¡Hola! Soy tu asistente de IA local. Puedo analizar imágenes, detectar toxicidad en textos, reconocer tu voz y responder preguntas.",
+            "qué eres": "Soy una IA local que ejecuta en tu navegador usando TensorFlow.js, MobileNet para visión, toxicidad para moderar contenido y reconocimiento de voz.",
+            "ayuda": "Puedo ayudarte con:\n📷 Analizar imágenes usando visión por computadora (MobileNet)\n🎤 Reconocer comandos de voz\n⚠️ Detectar contenido potencialmente ofensivo\n💬 Responder preguntas\n📝 Procesar texto",
+            "quién eres": "Soy Nexus AI, una inteligencia artificial local que funciona completamente en tu navegador.",
+            "gracias": "¡De nada! Estoy aquí para ayudarte en lo que necesites.",
+            "adiós": "¡Hasta luego! Vuelve cuando necesites ayuda.",
+            "hora": () => new Date().toLocaleTimeString('es-ES'),
+            "fecha": () => new Date().toLocaleDateString('es-ES'),
+            "librerías": "Estoy usando: TensorFlow.js (base), MobileNet (visión), Toxicity (moderación) y Speech Commands (voz)",
+            "capacidades": "Mis capacidades incluyen:\n✓ Clasificación de imágenes\n✓ Detección de toxicidad\n✓ Reconocimiento de comandos de voz\n✓ Procesamiento de lenguaje natural\n✓ Análisis de probabilidad con TensorFlow.js",
+            "tensorflow": "TensorFlow.js es la base de toda mi IA. Me permite ejecutar modelos de aprendizaje máquina en tu navegador sin enviar datos a servidores.",
+            "mobilenet": "MobileNet es un modelo de red neuronal convolucional que uso para clasificar imágenes. Puede identificar más de 1000 categorías diferentes de objetos.",
+            "toxicidad": "El modelo de toxicidad analiza textos para detectar lenguaje potencialmente ofensivo o dañino. Es útil para moderar contenido.",
+            "voz": "Reconozco comandos de voz usando Speech Commands. Puedo entender palabras clave en varios idiomas.",
+            "eres una ia": "Sí, soy una inteligencia artificial, pero local. Todo funciona en tu navegador sin conexión a internet (excepto en la carga inicial).",
+            "funcionar": "Sí, funcionó perfectamente. Ahora tengo todas mis librerías cargadas y puedo ayudarte con múltiples tareas.",
+            "imagen": "Puedo analizar imágenes usando MobileNet. Solo haz clic en 📎 y sube una foto. Te diré qué objeto cree que es.",
+            "seguridad": "La privacidad es importante: todo se procesa localmente en tu navegador. Tus datos no se envían a ningún servidor externo.",
+        };
+
+        // Función mejorada para obtener respuestas
+        function getResponse(text) {
+            const lower = text.toLowerCase().trim();
+            
+            // Búsqueda exacta
+            if (knowledge[lower] !== undefined) {
+                const result = knowledge[lower];
+                return typeof result === 'function' ? result() : result;
+            }
+            
+            // Búsqueda por palabras clave (orden de relevancia)
+            for (let key in knowledge) {
+                if (lower.includes(key)) {
+                    const result = knowledge[key];
+                    return typeof result === 'function' ? result() : result;
+                }
+            }
+            
+            // Si contiene preguntas comunes
+            if (lower.includes("¿") || lower.includes("?")) {
+                const responses = [
+                    "Esa es una buena pregunta. Con mis capacidades de IA local puedo analizar imágenes, detectar contenido inapropiado y responder preguntas.",
+                    "Interesante. Estoy ejecutando modelos de TensorFlow.js: MobileNet para visión, Toxicity para moderar y Speech Commands para voz.",
+                    "Buena pregunta. Mis modelos analizan el contenido de múltiples formas. ¿Qué específicamente te gustaría saber?",
+                    "Excelente pregunta. Puedo ayudarte con tareas de IA local: clasificación de imágenes, análisis de texto y reconocimiento de voz.",
+                    "Estoy aquí para ayudarte. ¿Te gustaría que analice una imagen, interprete voz o responda algo más?"
+                ];
+                return responses[Math.floor(Math.random() * responses.length)];
+            }
+            
+            // Respuestas contextuales por defecto
+            const defaultResponses = [
+                "Entiendo. Estoy procesando tu mensaje con mis modelos locales de IA.",
+                "Interesante punto. Mi conocimiento integra TensorFlow.js, visión computacional y análisis de texto.",
+                "Gracias por compartir eso. Te sugiero que hagas preguntas sobre mis capacidades (imagen, voz, moderación).",
+                "Anotado. Recuerda que puedes enviarm imágenes (📎), comandos de voz (🎤) o texto.",
+                "Claro, entendido. ¿Hay algo específico en lo que pueda ayudarte con mis herramientas de IA?",
+                "Fascinante. ¿Te gustaría que analice una imagen o reconozca un comando de voz al respecto?"
+            ];
+            return defaultResponses[Math.floor(Math.random() * defaultResponses.length)];
+        }
+
+        // Cargar modelos
         async function init() {
-            visionModel = await mobilenet.load();
-            toxicityModel = await toxicity.load(0.9);
-            console.log("Models loaded");
+            console.log("🤖 Inicializando Nexus AI...");
+            try {
+                console.log("📥 Cargando TensorFlow.js...");
+                // TensorFlow.js ya se carga automáticamente
+                
+                console.log("📥 Cargando MobileNet...");
+                visionModel = await mobilenet.load();
+                console.log("✓ MobileNet cargado correctamente");
+                
+                console.log("📥 Cargando modelo de Toxicidad...");
+                toxicityModel = await toxicity.load(0.9);
+                console.log("✓ Toxicity cargado correctamente");
+                
+                console.log("📥 Cargando Speech Commands...");
+                recognizer = await speechCommands.create("BROWSER_FFT");
+                await recognizer.ensureModelLoaded();
+                console.log("✓ Speech Commands cargado correctamente");
+                
+                const message = "✅ ¡Sistema completamente operacional!\n\nModelos cargados:\n✓ TensorFlow.js (base computacional)\n✓ MobileNet (clasificación de imágenes)\n✓ Toxicity (detección de contenido)\n✓ Speech Commands (reconocimiento de voz)\n\nEscribe 'ayuda' para conocer mis capacidades.";
+                appendMessage(message, false);
+            } catch (error) {
+                console.error("Error cargando modelos:", error);
+                appendMessage("⚠️ Error en la carga de modelos:\n" + error.message + "\nIntentando continuar con modelos disponibles...", false);
+            }
         }
 
         const chatContainer = document.getElementById('chat-container');
@@ -158,36 +248,105 @@
             appendMessage(text, true);
             userInput.value = '';
 
-            // AI Logic for text (Toxicity)
-            const predictions = await toxicityModel.classify([text]);
-            const isToxic = predictions.filter(p => p.results[0].match).length > 0;
-            
-            setTimeout(() => {
-                const response = isToxic 
-                    ? "⚠️ I've detected that your message might be offensive." 
-                    : "I understand. I'm a local AI running in your browser!";
-                appendMessage(response, false);
-            }, 600);
+            try {
+                // Validar toxicidad
+                const predictions = await toxicityModel.classify([text]);
+                const isToxic = predictions.filter(p => p.results[0].match).length > 0;
+                
+                setTimeout(() => {
+                    if (isToxic) {
+                        appendMessage("⚠️ He detectado que tu mensaje contiene lenguaje inapropiado. Te sugiero que lo reformules de manera respetuosa.", false);
+                    } else {
+                        const response = getResponse(text);
+                        appendMessage(response, false);
+                    }
+                }, 600);
+            } catch (error) {
+                appendMessage("Error al procesar: " + error.message, false);
+            }
         }
 
-        // Handle Image Upload
+        // Análisis de imagen con MobileNet
         document.getElementById('file-input').onchange = async (e) => {
             const file = e.target.files[0];
             if (!file) return;
 
             const url = URL.createObjectURL(file);
-            appendMessage("Analyzing this image...", true, url);
+            appendMessage("Analizando imagen con MobileNet...", true, url);
 
-            // Create temporary image element for AI
             const img = new Image();
             img.src = url;
             img.onload = async () => {
-                const predictions = await visionModel.classify(img);
-                appendMessage(`AI Vision: I think this is a ${predictions[0].className}.`, false);
+                try {
+                    const predictions = await visionModel.classify(img);
+                    let response = "🖼️ Análisis de imagen con MobileNet:\n\n";
+                    predictions.slice(0, 5).forEach((pred, i) => {
+                        const percentage = (pred.probability * 100).toFixed(2);
+                        response += `${i + 1}. ${pred.className} (${percentage}%)\n`;
+                    });
+                    appendMessage(response, false);
+                } catch (error) {
+                    appendMessage("❌ Error al analizar la imagen: " + error.message, false);
+                }
+            };
+            img.onerror = () => {
+                appendMessage("❌ No se pudo cargar la imagen", false);
             };
         };
 
-        // Send with Enter key
+        // Reconocimiento de voz mejorado
+        async function startVoiceRecognition() {
+            if (!recognizer) {
+                appendMessage("❌ El reconocimiento de voz aún no está disponible. Espera a que se cargue completamente.", false);
+                return;
+            }
+
+            if (isListening) {
+                appendMessage("⚠️ Ya estoy escuchando...", false);
+                return;
+            }
+
+            isListening = true;
+            appendMessage("🎤 Escuchando comando de voz... (por favor espera)", true);
+
+            const words = recognizer.wordList();
+            console.log("Palabras disponibles:", words);
+
+            try {
+                const result = await recognizer.listen(
+                    async (output) => {
+                        const scores = output.scores;
+                        let maxScore = 0;
+                        let maxIndex = 0;
+
+                        scores.forEach((score, i) => {
+                            if (score > maxScore) {
+                                maxScore = score;
+                                maxIndex = i;
+                            }
+                        });
+
+                        if (maxScore > 0.7) {
+                            const command = words[maxIndex];
+                            console.log(`Detectado: ${command} (confianza: ${maxScore.toFixed(2)})`);
+                            appendMessage(`🎤 Comando reconocido: "${command}" (confianza: ${(maxScore * 100).toFixed(1)}%)`, true);
+                            
+                            const response = getResponse(command);
+                            setTimeout(() => {
+                                appendMessage(response, false);
+                            }, 600);
+                        }
+                    },
+                    { probabilityThreshold: 0.7 }
+                );
+            } catch (error) {
+                console.log("Reconocimiento finalizado");
+            } finally {
+                isListening = false;
+            }
+        }
+
+        // Enter para enviar
         userInput.addEventListener("keypress", (e) => {
             if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
@@ -195,7 +354,8 @@
             }
         });
 
-        init();
+        // Inicializar cuando se carga la página
+        window.addEventListener('load', init);
     </script>
 </body>
 </html>
