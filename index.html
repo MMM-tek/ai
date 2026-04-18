@@ -51,7 +51,8 @@
         }
 
         .ai-msg img {
-            max-width: 200px;
+            max-width: 120px;
+            height: auto;
             border-radius: 10px;
             margin-top: 10px;
             display: block;
@@ -130,9 +131,49 @@
     <script>
         let visionModel, toxicityModel, recognizer;
         let isListening = false;
+        let isProcessing = false;
 
-        // Knowledge base for answering questions
+        // Detect language from text
+        function detectLanguage(text) {
+            const spanishPatterns = /^(hola|qué|por qué|cómo|cuándo|dónde|quién|sí|no|gracias|por favor|adiós)\b/i;
+            const englishPatterns = /^(hello|hi|what|why|how|when|where|who|yes|no|thanks|please|goodbye)\b/i;
+            const frenchPatterns = /^(bonjour|quoi|pourquoi|comment|quand|où|qui|oui|non|merci|s\'il|au revoir)\b/i;
+            
+            if (spanishPatterns.test(text)) return 'es';
+            if (frenchPatterns.test(text)) return 'fr';
+            if (englishPatterns.test(text)) return 'en';
+            return 'en'; // Default to English
+        }
+
+        // Safe math evaluation
+        function evaluateMath(expression) {
+            try {
+                // Remove spaces and validate
+                const cleaned = expression.replace(/\s+/g, '');
+                // Only allow numbers, operators, and parentheses
+                if (!/^[0-9+\-*/(). ]+$/.test(cleaned)) return null;
+                // Evaluate using Function constructor (safer than eval)
+                const result = new Function('return ' + cleaned)();
+                return isFinite(result) ? result : null;
+            } catch (e) {
+                return null;
+            }
+        }
+
+        // Translate key phrases
+        function translate(key, lang) {
+            const translations = {
+                'thinking': { es: 'Pensando...', en: 'Thinking...', fr: 'Je réfléchis...' },
+                'error_calc': { es: 'No pude evaluar esa expresión matemática.', en: 'I could not evaluate that math expression.', fr: 'Je ne pourrais pas évaluer cette expression.' },
+                'analyzing': { es: 'Analizando imagen...', en: 'Analyzing image...', fr: 'Analyse de l\'image...' },
+                'loading': { es: 'Las imágenes están cargándose...', en: 'Loading images...', fr: 'Chargement des images...' }
+            };
+            return translations[key]?.[lang] || translations[key]?.['en'];
+        }
+
+        // Knowledge base for answering questions (English, Spanish, French)
         const knowledge = {
+            // English
             "hello": "Hello! I'm your local AI assistant. I can analyze images, detect toxicity in text, recognize your voice, and answer questions.",
             "hi": "Hi there! I'm Nexus AI, your local artificial intelligence. How can I help you today?",
             "what are you": "I'm a local AI that runs in your browser using TensorFlow.js, MobileNet for vision, Toxicity for content moderation, and Speech Commands for voice recognition.",
@@ -156,48 +197,127 @@
             "security": "Privacy is important: everything is processed locally in your browser. Your data is not sent to any external server.",
             "how are you": "I'm functioning well, thank you for asking! Ready to help you with image analysis, voice commands, or any questions.",
             "features": "My main features are:\n📷 Image recognition with MobileNet\n🎤 Voice command detection\n⚠️ Content toxicity detection\n💬 Intelligent Q&A\n🔒 Local processing for privacy",
+            \n            // Spanish\n            "hola": "¡Hola! Soy tu asistente de IA local. Puedo analizar imágenes, detectar toxicidad en textos, reconocer tu voz y responder preguntas.",
+            "qué eres": "Soy una IA local que ejecuta en tu navegador usando TensorFlow.js, MobileNet para visión, Toxicity para moderar contenido y reconocimiento de voz.",
+            "ayuda": "Puedo ayudarte con:\n📷 Clasificación de imágenes usando visión por computadora (MobileNet)\n🎤 Reconocimiento de comandos de voz\n⚠️ Detectar contenido potencialmente ofensivo\n💬 Responder preguntas\n📝 Procesar texto",
+            "quién eres": "Soy Nexus AI, una inteligencia artificial local que funciona completamente en tu navegador.",
+            "gracias": "¡De nada! Estoy aquí para ayudarte en lo que necesites.",
+            "adiós": "¡Hasta luego! Vuelve cuando necesites ayuda.",
+            "hora": () => new Date().toLocaleTimeString('es-ES'),
+            "fecha": () => new Date().toLocaleDateString('es-ES'),
+            "librerías": "Estoy usando: TensorFlow.js (base), MobileNet (visión), Toxicity (moderación) y Speech Commands (voz)",
+            "capacidades": "Mis capacidades incluyen:\n✓ Clasificación de imágenes\n✓ Detección de toxicidad\n✓ Reconocimiento de comandos de voz\n✓ Procesamiento de lenguaje natural\n✓ Análisis de probabilidad con TensorFlow.js",
+            "imagen": "Puedo analizar imágenes usando MobileNet. Solo haz clic en 📎 y sube una foto. Te diré qué objeto cree que es.",
+            "seguridad": "La privacidad es importante: todo se procesa localmente en tu navegador. Tus datos no se envían a ningún servidor externo.",
+            "cómo estás": "¡Funcionando bien, gracias por preguntar! Listo para ayudarte con análisis de imágenes, comandos de voz o cualquier pregunta.",
+            \n            // French\n            "bonjour": "Bonjour! Je suis votre assistant IA local. Je peux analyser des images, détecter la toxicité du texte, reconnaître votre voix et répondre à des questions.",
+            "qu'est-ce que tu es": "Je suis une IA locale qui s'exécute dans votre navigateur en utilisant TensorFlow.js, MobileNet pour la vision et Toxicity pour la modération de contenu.",
+            "aide": "Je peux vous aider avec:\n📷 Classification d'images à l'aide de la vision par ordinateur (MobileNet)\n🎤 Reconnaissance de commandes vocales\n⚠️ Détecter les contenus potentiellement offensants\n💬 Répondre à des questions\n📝 Traiter le texte",
+            "qui es-tu": "Je suis Nexus AI, une intelligence artificielle locale qui fonctionne entièrement dans votre navigateur.",
+            "merci": "De rien! Je suis là pour vous aider avec ce que vous avez besoin.",
+            "au revoir": "Au revoir! À bientôt quand vous aurez besoin d'aide.",
+            "heure": () => new Date().toLocaleTimeString('fr-FR'),
+            "date fr": () => new Date().toLocaleDateString('fr-FR'),
+            "bibliothèques": "J'utilise: TensorFlow.js (fondation), MobileNet (vision), Toxicity (modération) et Speech Commands (voix)",
+            "image": "Je peux analyser des images en utilisant MobileNet. Cliquez simplement sur 📎 et téléchargez une photo. Je vous dirai quel objet je pense que c'est.",
+            "sécurité": "La confidentialité est importante: tout est traité localement dans votre navigateur. Vos données ne sont pas envoyées à un serveur externe.",
         };
 
-        // Improved function to get responses
+        // Enhanced response function with math and multilingual support
         function getResponse(text) {
             const lower = text.toLowerCase().trim();
+            const lang = detectLanguage(text);
             
-            // Exact match search
+            // Try to evaluate as math expression first
+            const mathResult = evaluateMath(lower);
+            if (mathResult !== null && !isNaN(mathResult)) {
+                if (lang === 'es') {
+                    return `Resultado: ${mathResult}`;
+                } else if (lang === 'fr') {
+                    return `Résultat: ${mathResult}`;
+                } else {
+                    return `Result: ${mathResult}`;
+                }
+            }
+            
+            // Exact match search in knowledge base
             if (knowledge[lower] !== undefined) {
                 const result = knowledge[lower];
                 return typeof result === 'function' ? result() : result;
             }
             
-            // Keyword search (by relevance order)
+            // Keyword search with better matching
+            const words = lower.split(/\s+/);
+            let bestMatch = null;
+            let bestMatchLength = 0;
+            
             for (let key in knowledge) {
-                if (lower.includes(key)) {
-                    const result = knowledge[key];
-                    return typeof result === 'function' ? result() : result;
+                if (lower.includes(key) && key.length > bestMatchLength) {
+                    bestMatch = knowledge[key];
+                    bestMatchLength = key.length;
                 }
             }
             
-            // If it contains common questions
-            if (lower.includes("?")) {
-                const responses = [
-                    "That's a great question. With my local AI capabilities, I can analyze images, detect inappropriate content, and answer questions.",
-                    "Interesting. I'm running TensorFlow.js models: MobileNet for vision, Toxicity for moderation, and Speech Commands for voice.",
-                    "Good question. My models analyze content in multiple ways. What specifically would you like to know?",
-                    "Excellent question. I can help you with local AI tasks: image classification, text analysis, and voice recognition.",
-                    "I'm here to help you. Would you like me to analyze an image, process voice, or answer something else?"
-                ];
-                return responses[Math.floor(Math.random() * responses.length)];
+            if (bestMatch !== null) {
+                const result = bestMatch;
+                return typeof result === 'function' ? result() : result;
             }
             
-            // Default contextual responses
-            const defaultResponses = [
+            // Handle common question patterns
+            if (lower.includes("?")) {
+                const questionsES = [
+                    "Esa es una buena pregunta. Puedo ayudarte con análisis de imágenes, detección de contenido inapropiado y responder preguntas.",
+                    "Interesante. Estoy ejecutando modelos de TensorFlow.js: MobileNet para visión, Toxicity para moderación y Speech Commands para voz.",
+                    "Buena pregunta. ¿Qué específicamente te gustaría saber?",
+                    "Puedo ayudarte con tareas de IA local: clasificación de imágenes, análisis de texto y reconocimiento de voz."
+                ];
+                const questionsFR = [
+                    "C'est une excellente question. Je peux vous aider avec l'analyse d'images et la détection de contenu inapproprié.",
+                    "Intéressant. J'exécute des modèles TensorFlow.js: MobileNet pour la vision et Toxicity pour la modération.",
+                    "Bonne question. Qu'aimeriez-vous exactement savoir?",
+                    "Je peux vous aider avec des tâches d'IA locale: classification d'images et analyse de texte."
+                ];
+                const questionsEN = [
+                    "That's a great question. I can help you with image analysis, content detection, and answering questions.",
+                    "Interesting. I'm running TensorFlow.js models: MobileNet for vision and Toxicity for moderation.",
+                    "Good question. What specifically would you like to know?",
+                    "I can help you with local AI tasks: image classification, text analysis, and voice recognition."
+                ];
+                
+                let responseList = questionsEN;
+                if (lang === 'es') responseList = questionsES;
+                else if (lang === 'fr') responseList = questionsFR;
+                
+                return responseList[Math.floor(Math.random() * responseList.length)];
+            }
+            
+            // Default contextual responses by language
+            const defaultES = [
+                "Entiendo. Estoy procesando tu mensaje con mis modelos de IA local.",
+                "Punto interesante. Mi conocimiento integra TensorFlow.js, visión por computadora y análisis de texto.",
+                "Gracias por compartir eso. Puedo ayudarte con análisis de imágenes, moderar contenido y reconocer comandos.",
+                "Anotado. Recuerda que puedes enviarme imágenes (📎), comandos de voz (🎤) o texto.",
+                "Claro, entendido. ¿Hay algo específico en lo que pueda ayudarte?"
+            ];
+            const defaultFR = [
+                "Je comprends. Je traite votre message avec mes modèles d'IA locaux.",
+                "Point intéressant. Mes connaissances intègrent TensorFlow.js, la vision par ordinateur et l'analyse de texte.",
+                "Merci de partager cela. Je peux vous aider avec l'analyse d'images et la modération de contenu.",
+                "Noté. N'oubliez pas que vous pouvez m'envoyer des images (📎), des commandes vocales (🎤) ou du texte."
+            ];
+            const defaultEN = [
                 "I understand. I'm processing your message with my local AI models.",
                 "Interesting point. My knowledge integrates TensorFlow.js, computer vision, and text analysis.",
-                "Thanks for sharing that. I suggest you ask questions about my capabilities (images, voice, moderation).",
+                "Thanks for sharing that. I can help you with image analysis, content moderation, and voice commands.",
                 "Noted. Remember you can send me images (📎), voice commands (🎤), or text.",
-                "Sure, understood. Is there something specific I can help you with using my AI tools?",
-                "Fascinating. Would you like me to analyze an image or recognize a voice command about that?"
+                "Sure, understood. Is there something specific I can help you with?"
             ];
-            return defaultResponses[Math.floor(Math.random() * defaultResponses.length)];
+            
+            let defaultList = defaultEN;
+            if (lang === 'es') defaultList = defaultES;
+            else if (lang === 'fr') defaultList = defaultFR;
+            
+            return defaultList[Math.floor(Math.random() * defaultList.length)];
         }
 
         // Load models
@@ -246,10 +366,27 @@
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
 
+        function disableInput(disabled) {
+            const textarea = document.getElementById('user-input');
+            const buttons = document.querySelectorAll('.btn-icon');
+            textarea.disabled = disabled;
+            buttons.forEach(btn => btn.disabled = disabled);
+            if (disabled) {
+                textarea.style.opacity = '0.5';
+                buttons.forEach(btn => btn.style.opacity = '0.5');
+            } else {
+                textarea.style.opacity = '1';
+                buttons.forEach(btn => btn.style.opacity = '1');
+            }
+        }
+
         async function handleSend() {
             const text = userInput.value.trim();
-            if (!text) return;
+            if (!text || isProcessing) return;
 
+            isProcessing = true;
+            disableInput(true);
+            
             appendMessage(text, true);
             userInput.value = '';
 
@@ -265,19 +402,26 @@
                         const response = getResponse(text);
                         appendMessage(response, false);
                     }
+                    isProcessing = false;
+                    disableInput(false);
                 }, 600);
             } catch (error) {
                 appendMessage("Error processing: " + error.message, false);
+                isProcessing = false;
+                disableInput(false);
             }
         }
 
-        // Análisis de imagen con MobileNet
+        // Image analysis with MobileNet
         document.getElementById('file-input').onchange = async (e) => {
             const file = e.target.files[0];
             if (!file) return;
 
+            isProcessing = true;
+            disableInput(true);
+            
             const url = URL.createObjectURL(file);
-            appendMessage("Analizando imagen con MobileNet...", true, url);
+            appendMessage("Analyzing image with MobileNet...", true, url);
 
             const img = new Image();
             img.src = url;
@@ -292,10 +436,15 @@
                     appendMessage(response, false);
                 } catch (error) {
                     appendMessage("❌ Error analyzing image: " + error.message, false);
+                } finally {
+                    isProcessing = false;
+                    disableInput(false);
                 }
             };
             img.onerror = () => {
                 appendMessage("❌ Could not load the image", false);
+                isProcessing = false;
+                disableInput(false);
             };
         };
 
@@ -311,7 +460,15 @@
                 return;
             }
 
+            if (isProcessing) {
+                appendMessage("⚠️ I'm still processing the previous message. Please wait.", false);
+                return;
+            }
+
             isListening = true;
+            isProcessing = true;
+            disableInput(true);
+            
             appendMessage("🎤 Listening for voice command... (please wait)", true);
 
             const words = recognizer.wordList();
@@ -339,6 +496,8 @@
                             const response = getResponse(command);
                             setTimeout(() => {
                                 appendMessage(response, false);
+                                isProcessing = false;
+                                disableInput(false);
                             }, 600);
                         }
                     },
@@ -348,6 +507,10 @@
                 console.log("Recognition finished");
             } finally {
                 isListening = false;
+                if (isProcessing) {
+                    isProcessing = false;
+                    disableInput(false);
+                }
             }
         }
 
