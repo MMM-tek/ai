@@ -133,20 +133,29 @@
         let isListening = false;
         let isProcessing = false;
 
-        // Detect language from text (optimized)
+        // Detect language from text (Spanish vs English only)
         function detectLanguage(text) {
-            const lower = text.toLowerCase().slice(0, 20); // Check first 20 chars only
+            const lower = text.toLowerCase().slice(0, 20);
             if (/^(hola|qué|por qué|cómo|cuándo|dónde|quién|sí|gracias|adiós|¡|¿)/.test(lower)) return 'es';
-            if (/^(bonjour|quoi|pourquoi|comment|quand|où|qui|oui|merci|au revoir)/.test(lower)) return 'fr';
             return 'en'; // Default to English
         }
 
-        // Safe and fast math evaluation
-        function evaluateMath(expr) {
+        // Advanced math solver for complex problems
+        function solveMath(expr) {
             try {
-                const clean = expr.replace(/[\s%]/g, '').slice(0, 50); // Max 50 chars, remove spaces
-                if (!/^[0-9+\-*/(). ]+$/.test(clean)) return null;
-                const result = new Function('return ' + clean)();
+                const clean = expr.replace(/[\s%]/g, '').slice(0, 100);
+                // Support fractions, powers, square roots, etc
+                const enhanced = clean
+                    .replace(/\^/g, '**')
+                    .replace(/√/g, 'Math.sqrt')
+                    .replace(/sin/g, 'Math.sin')
+                    .replace(/cos/g, 'Math.cos')
+                    .replace(/tan/g, 'Math.tan')
+                    .replace(/log/g, 'Math.log10')
+                    .replace(/ln/g, 'Math.log');
+                
+                if (!/^[0-9+\-*/(). MathsqrtgincotnloxabetAB^]+$/.test(enhanced)) return null;
+                const result = new Function('return ' + enhanced)();
                 return isFinite(result) ? result : null;
             } catch (e) { return null; }
         }
@@ -191,27 +200,23 @@
             "imagen": "Puedo analizar imágenes usando MobileNet. Solo haz clic en 📎 y sube una foto. Te diré qué objeto cree que es.",
             "seguridad": "La privacidad es importante: todo se procesa localmente en tu navegador. Tus datos no se envían a ningún servidor externo.",
             "cómo estás": "¡Funcionando bien, gracias por preguntar! Listo para ayudarte con análisis de imágenes, comandos de voz o cualquier pregunta.",
-            // French
-            "bonjour": "Bonjour! Je suis votre assistant IA local. Je peux analyser des images, détecter la toxicité du texte, reconnaître votre voix et répondre à des questions.",
-            "aide": "Je peux vous aider avec:\n📷 Classification d'images à l'aide de la vision par ordinateur (MobileNet)\n🎤 Reconnaissance de commandes vocales\n⚠️ Détecter les contenus potentiellement offensants\n💬 Répondre à des questions\n📝 Traiter le texte",
-            "qui es-tu": "Je suis Nexus AI, une intelligence artificielle locale qui fonctionne entièrement dans votre navigateur.",
-            "merci": "De rien! Je suis là pour vous aider avec ce que vous avez besoin.",
-            "au revoir": "Au revoir! À bientôt quand vous aurez besoin d'aide.",
-            "heure": () => new Date().toLocaleTimeString('fr-FR'),
-            "date": () => new Date().toLocaleDateString('fr-FR'),
-            "bibliothèques": "J'utilise: TensorFlow.js (fondation), MobileNet (vision), Toxicity (modération) et Speech Commands (voix)"
         };
 
-        // Optimized response function with math support
+        // Optimized response function with advanced math support
         function getResponse(text) {
             const lower = text.toLowerCase().trim();
             const lang = detectLanguage(text);
             
-            // Try math first
-            const mathResult = evaluateMath(lower);
+            // Try math solver
+            const mathResult = solveMath(lower);
             if (mathResult !== null) {
-                const results = { es: 'Resultado:', en: 'Result:', fr: 'Résultat:' };
-                return `${results[lang]} ${mathResult}`;
+                let formatted = mathResult.toString();
+                // Format large decimals
+                if (formatted.includes('.')) {
+                    formatted = parseFloat(formatted).toFixed(4).replace(/\.?0+$/, '');
+                }
+                const results = { es: 'Resultado:', en: 'Result:' };
+                return `${results[lang]} ${formatted}`;
             }
             
             // Exact match in knowledge base
@@ -220,7 +225,7 @@
                 return typeof result === 'function' ? result() : result;
             }
             
-            // Quick keyword match (first word only for speed)
+            // Quick keyword match
             const firstWord = lower.split(/\s+/)[0];
             if (knowledge[firstWord]) {
                 const result = knowledge[firstWord];
@@ -231,8 +236,7 @@
             if (lower.includes("?")) {
                 const qa = {
                     es: ["¿Cómo puedo ayudarte?", "Interesante pregunta.", "¿Algo más?"],
-                    en: ["How can I help?", "That's a good question.", "Anything else?"],
-                    fr: ["Comment puis-je vous aider?", "C'est une bonne question.", "Autre chose?"]
+                    en: ["How can I help?", "That's a good question.", "Anything else?", "I'm here to assist."]
                 };
                 const responses = qa[lang] || qa['en'];
                 return responses[Math.floor(Math.random() * responses.length)];
@@ -241,8 +245,7 @@
             // Default responses
             const defaults = {
                 es: ["Entiendo.", "Interesante.", "¿Necesitas ayuda?"],
-                en: ["I understand.", "Interesting.", "How can I help?"],
-                fr: ["Je comprends.", "Intéressant.", "Comment puis-je vous aider?"]
+                en: ["I understand.", "Interesting.", "How can I help?"]
             };
             const list = defaults[lang] || defaults['en'];
             return list[Math.floor(Math.random() * list.length)];
@@ -270,15 +273,15 @@
                 await recognizer.ensureModelLoaded();
                 console.log("✓ Speech Commands loaded");
                 
-                // Replace loading message with success
+                // Replace loading message
                 const chatContainer = document.getElementById('chat-container');
                 const lastMsg = chatContainer.lastChild;
                 if (lastMsg && lastMsg.innerText.includes("Loading")) {
-                    lastMsg.innerText = "✅ System ready! Type 'help' to see what I can do.";
+                    lastMsg.innerText = "✅ Ready! I can:\n📷 Analyze images in detail\n🧮 Solve math problems\n💬 Answer questions in EN/ES";
                 }
             } catch (error) {
                 console.error("Error loading models:", error);
-                appendMessage("⚠️ Some models failed to load, but I can still help with text queries.", false);
+                appendMessage("⚠️ Some models failed to load, but I can still help with calculations and text.", false);
             }
         }
 
@@ -362,11 +365,14 @@
             img.onload = async () => {
                 try {
                     const predictions = await visionModel.classify(img);
-                    let response = "🖼️ Image analysis with MobileNet:\n\n";
-                    predictions.slice(0, 5).forEach((pred, i) => {
-                        const percentage = (pred.probability * 100).toFixed(2);
-                        response += `${i + 1}. ${pred.className} (${percentage}%)\n`;
+                    // Show top 15 predictions for better accuracy
+                    let response = "🖼️ Image Analysis Results:\n\n";
+                    predictions.slice(0, 15).forEach((pred, i) => {
+                        const percentage = (pred.probability * 100).toFixed(1);
+                        const confidence = percentage >= 50 ? '✓' : percentage >= 20 ? '◐' : '◯';
+                        response += `${confidence} ${i + 1}. ${pred.className} (${percentage}%)\n`;
                     });
+                    response += "\n📌 Top match: " + predictions[0].className + " (" + (predictions[0].probability * 100).toFixed(1) + "%)";
                     appendMessage(response, false);
                 } catch (error) {
                     appendMessage("❌ Error analyzing image: " + error.message, false);
