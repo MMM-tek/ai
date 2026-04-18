@@ -589,7 +589,17 @@
                 useModel = await use.load();
                 
                 console.log("Loading Translation model...");
-                translationModel = await translation.load();
+                if (typeof translation !== 'undefined' && translation.load) {
+                    try {
+                        translationModel = await translation.load();
+                    } catch (e) {
+                        console.log("Translation model failed to load:", e.message);
+                        translationModel = null;
+                    }
+                } else {
+                    console.log("Translation library not available in this browser environment.");
+                    translationModel = null;
+                }
                 
                 console.log("Loading Sentiment model...");
                 sentimentModel = await sentiment.load();
@@ -720,7 +730,7 @@
                             : 'I have detected inappropriate language. Please rephrase your message respectfully.';
                         appendMessage(warning, false);
                     } else {
-                        const response = await generateSmartResponse(text, context);
+                        let response = await generateSmartResponse(text, context);
                         if (lastLanguage === 'es') {
                             response = await translateText(response, 'en', 'es');
                         }
