@@ -17,6 +17,8 @@
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/body-pix"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/knn-classifier"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/universal-sentence-encoder"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/qna"></script>
 
     <style>
         * { box-sizing: border-box; }
@@ -56,6 +58,27 @@
             align-self: flex-start;
             background-color: #343541;
             border: 1px solid #444;
+        }
+
+        .ai-msg.thinking {
+            background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.16));
+            border-color: #5a5a70;
+            color: #f4f4f8;
+            min-width: 120px;
+        }
+
+        .thinking-dots {
+            display: inline-block;
+            font-size: 1.8em;
+            letter-spacing: 0.2em;
+            animation: blink-dots 1.2s infinite steps(3, end);
+        }
+
+        @keyframes blink-dots {
+            0%, 20% { color: transparent; }
+            40% { color: #f4f4f8; }
+            60% { color: transparent; }
+            100% { color: #f4f4f8; }
         }
 
         .ai-msg img {
@@ -143,6 +166,8 @@
         let visionModel, toxicityModel, recognizer;
         let cocoSsdModel, poseNetModel, faceLandmarksModel;
         let handposeModel, bodyPixModel, blazefaceModel, knnClassifierModel;
+        let useModel, qnaModel;
+        let lastLanguage = 'en';
         let isListening = false;
         let isProcessing = false;
         let conversationHistory = [];
@@ -220,8 +245,10 @@
             return 'en'; // Default to English
         }
 
-        function generateSmartResponse(text, context) {
-            const lang = detectLanguage(text);
+        async function generateSmartResponse(text, context) {
+            const userLang = detectLanguage(text);
+            lastLanguage = userLang || lastLanguage;
+            const lang = lastLanguage;
             
             // Math handling
             if (context.isMath) {
@@ -256,7 +283,7 @@
             }
             
             // Default to knowledge base
-            return getResponse(text);
+            return await getResponse(text);
         }
 
         // Advanced math solver for complex problems
@@ -327,58 +354,100 @@
         };
 
         // Optimized response function with advanced math support
-        function getResponse(text) {
+        async function getResponse(text) {
             const lower = text.toLowerCase().trim();
-            const lang = detectLanguage(text);
-            
+            const lang = lastLanguage;
+
             // Try math solver
             const mathResult = solveMath(lower);
             if (mathResult !== null) {
                 let formatted = mathResult.toString();
-                // Format large decimals
                 if (formatted.includes('.')) {
                     formatted = parseFloat(formatted).toFixed(4).replace(/\.?0+$/, '');
                 }
                 const results = { es: 'Resultado:', en: 'Result:' };
                 return `${results[lang]} ${formatted}`;
             }
-            
+
             // Exact match in knowledge base
             if (knowledge[lower]) {
                 const result = knowledge[lower];
                 return typeof result === 'function' ? result() : result;
             }
-            
+
             // Quick keyword match
             const firstWord = lower.split(/\s+/)[0];
             if (knowledge[firstWord]) {
                 const result = knowledge[firstWord];
                 return typeof result === 'function' ? result() : result;
             }
-            
-            // Question patterns
-            if (lower.includes("?")) {
-                const qa = {
-                    es: ["¿Cómo puedo ayudarte?", "Interesante pregunta.", "¿Algo más?"],
-                    en: ["How can I help?", "That's a good question.", "Anything else?", "I'm here to assist."]
-                };
-                const responses = qa[lang] || qa['en'];
-                return responses[Math.floor(Math.random() * responses.length)];
+
+            // QnA fallback using loaded QnA model
+            if (qnaModel && lower.includes('?')) {
+                try {
+                    const passage = Object.entries(knowledge)
+                        .map(([key, value]) => `${key}: ${typeof value === 'function' ? value() : value}`)
+                        .join('\n');
+                    const answers = await qnaModel.findAnswers(text, passage);
+                    if (answers && answers.length > 0 && answers[0].score > 0.4) {
+                        return answers[0].text;
+                    }
+                } catch (e) {
+                    console.warn('QnA fallback failed:', e.message);
+                }
             }
-            
-            // Default responses
+
+            // Semantic similarity fallback using Universal Sentence Encoder
+            if (useModel) {
+                try {
+                    const keys = Object.keys(knowledge).filter(k => typeof knowledge[k] === 'string');
+                    const inputs = [lower, ...keys];
+                    const embeddings = await useModel.embed(inputs);
+                    const values = await embeddings.array();
+                    const queryVector = values[0];
+                    let bestScore = -1;
+                    let bestIndex = -1;
+                    const queryNorm = Math.sqrt(queryVector.reduce((sum, val) => sum + val * val, 0));
+                    for (let i = 1; i < values.length; i++) {
+                        const candidate = values[i];
+                        const dot = candidate.reduce((sum, val, j) => sum + val * queryVector[j], 0);
+                        const candidateNorm = Math.sqrt(candidate.reduce((sum, val) => sum + val * val, 0));
+                        const score = dot / (candidateNorm * queryNorm + 1e-9);
+                        if (score > bestScore) {
+                            bestScore = score;
+                            bestIndex = i - 1;
+                        }
+                    }
+                    embeddings.dispose();
+                    if (bestScore > 0.70) {
+                        const selected = keys[bestIndex];
+                        const result = knowledge[selected];
+                        return typeof result === 'function' ? result() : result;
+                    }
+                } catch (e) {
+                    console.warn('USE semantic fallback failed:', e.message);
+                }
+            }
+
+            if (lower.includes('?')) {
+                const qa = {
+                    es: ['¿Cómo puedo ayudarte?', 'Interesante pregunta.', '¿Algo más?'],
+                    en: ['How can I help?', 'That\'s a good question.', 'Anything else?', 'I\'m here to assist.']
+                };
+                return qa[lang][Math.floor(Math.random() * qa[lang].length)];
+            }
+
             const defaults = {
-                es: ["Entiendo.", "Interesante.", "¿Necesitas ayuda?"],
-                en: ["I understand.", "Interesting.", "How can I help?"]
+                es: ['Entiendo.', 'Interesante.', '¿Necesitas ayuda?'],
+                en: ['I understand.', 'Interesting.', 'How can I help?']
             };
-            const list = defaults[lang] || defaults['en'];
-            return list[Math.floor(Math.random() * list.length)];
+            return defaults[lang][Math.floor(Math.random() * defaults[lang].length)];
         }
 
         // Load advanced AI models
         async function init() {
             console.log("🤖 Initializing Advanced Nexus AI...");
-            appendMessage("⏳ Loading 9 advanced AI models...", false);
+            appendMessage("⏳ Loading many advanced AI models...", false);
             
             try {
                 // Core models
@@ -425,8 +494,14 @@
                 blazefaceModel = await blazeface.load();
                 
                 console.log("📥 Loading KNN Classifier...");
-                const classifier = window.knnClassifier.create ? window.knnClassifier.create() : null;
+                const classifier = typeof knnClassifier !== 'undefined' && knnClassifier.create ? knnClassifier.create() : null;
                 knnClassifierModel = classifier;
+                
+                console.log("📥 Loading Universal Sentence Encoder...");
+                useModel = await use.load();
+                
+                console.log("📥 Loading QnA model...");
+                qnaModel = await qna.load();
                 
                 // Speech recognition
                 console.log("📥 Loading Speech Commands...");
@@ -437,7 +512,7 @@
                 const chatContainer = document.getElementById('chat-container');
                 const lastMsg = chatContainer.lastChild;
                 if (lastMsg && lastMsg.innerText.includes("Loading")) {
-                    lastMsg.innerText = "🎉 Advanced AI System Ready!\n\nLoaded 9 AI models:\n🤖 MobileNet (classification)\n🎯 COCO-SSD (objects)\n🏃 PoseNet (poses)\n👤 Face Landmarks (faces)\n🤏 Handpose (hands)\n🧍 BodyPix (segmentation)\n⚡ BlazeFace (fast faces)\n🧠 KNN Classifier (learning)\n⚠️ Toxicity (moderation)\n🎤 Speech Commands (voice)\n\nI'm now super intelligent! Try asking complex questions or uploading images.";
+                    lastMsg.innerText = "🎉 Advanced AI System Ready!\n\nLoaded many advanced AI models:\n🤖 MobileNet (classification)\n🎯 COCO-SSD (objects)\n🏃 PoseNet (poses)\n👤 Face Landmarks (faces)\n🤏 Handpose (hands)\n🧍 BodyPix (segmentation)\n⚡ BlazeFace (fast faces)\n🧠 KNN Classifier (learning)\n🔤 Universal Sentence Encoder\n❓ QnA model\n⚠️ Toxicity (moderation)\n🎤 Speech Commands (voice)\n\nI'm now super intelligent! Ask me anything in the last language you used, and I'll think before answering.";
                 }
             } catch (error) {
                 console.error("Error loading models:", error);
@@ -477,6 +552,24 @@
             }
         }
 
+        let thinkingMessage = null;
+
+        function showThinking() {
+            hideThinking();
+            thinkingMessage = document.createElement('div');
+            thinkingMessage.className = 'message ai-msg thinking';
+            thinkingMessage.innerHTML = '<span class="thinking-dots">...</span>';
+            chatContainer.appendChild(thinkingMessage);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function hideThinking() {
+            if (thinkingMessage) {
+                thinkingMessage.remove();
+                thinkingMessage = null;
+            }
+        }
+
         async function handleSend() {
             const text = userInput.value.trim();
             if (!text || isProcessing) return;
@@ -484,36 +577,40 @@
             isProcessing = true;
             disableInput(true);
             
+            const userLang = detectLanguage(text);
+            lastLanguage = userLang || lastLanguage;
+
             // Add to conversation history
-            conversationHistory.push({ role: 'user', content: text });
+            conversationHistory.push({ role: 'user', content: text, language: lastLanguage });
             
             appendMessage(text, true);
             userInput.value = '';
+            showThinking();
 
             try {
-                // Analyze context and sentiment
                 const context = analyzeContext(text);
                 
-                // Validate toxicity
                 const predictions = await toxicityModel.classify([text]);
                 const isToxic = predictions.filter(p => p.results[0].match).length > 0;
-                
-                setTimeout(() => {
+
+                setTimeout(async () => {
+                    hideThinking();
                     if (isToxic) {
-                        appendMessage("⚠️ I've detected that your message contains inappropriate language. I suggest you rephrase it respectfully.", false);
+                        const warning = lastLanguage === 'es'
+                            ? '⚠️ He detectado lenguaje inapropiado. Por favor, reformula tu mensaje respetuosamente.'
+                            : '⚠️ I have detected inappropriate language. Please rephrase your message respectfully.';
+                        appendMessage(warning, false);
                     } else {
-                        // Use smart response generation
-                        const response = generateSmartResponse(text, context);
+                        const response = await generateSmartResponse(text, context);
                         appendMessage(response, false);
-                        
-                        // Add AI response to history
-                        conversationHistory.push({ role: 'assistant', content: response });
+                        conversationHistory.push({ role: 'assistant', content: response, language: lastLanguage });
                     }
                     isProcessing = false;
                     disableInput(false);
                 }, 800);
             } catch (error) {
-                appendMessage("Error processing: " + error.message, false);
+                hideThinking();
+                appendMessage('Error processing: ' + error.message, false);
                 isProcessing = false;
                 disableInput(false);
             }
@@ -686,7 +783,7 @@
                             console.log(`Detected: ${command} (confidence: ${maxScore.toFixed(2)})`);
                             appendMessage(`🎤 Command recognized: "${command}" (confidence: ${(maxScore * 100).toFixed(1)}%)`, true);
                             
-                            const response = getResponse(command);
+                            const response = await getResponse(command);
                             setTimeout(() => {
                                 appendMessage(response, false);
                                 isProcessing = false;
