@@ -8,7 +8,6 @@
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/toxicity@1.2.2/dist/toxicity.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/speech-commands@0.5.4/dist/speech-commands.min.js"></script>
     <!-- Advanced AI models -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/posenet"></script>
@@ -126,15 +125,51 @@
         }
 
         .btn-icon {
-            background: none;
-            border: none;
-            color: #acacbe;
+            background: #2e303f;
+            border: 1px solid #4d4d5a;
+            color: #e0e2eb;
             cursor: pointer;
-            padding: 5px 10px;
-            font-size: 20px;
+            padding: 10px 14px;
+            border-radius: 10px;
+            font-size: 14px;
+            margin-right: 8px;
+            transition: background 180ms ease, transform 180ms ease, border-color 180ms ease;
         }
 
-        .btn-icon:hover { color: white; }
+        .btn-icon:hover {
+            background: #41435a;
+            border-color: #6f7288;
+            transform: translateY(-1px);
+            color: #ffffff;
+        }
+
+        .image-preview {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 10px;
+            border: 1px solid rgba(255,255,255,0.08);
+            background: rgba(255,255,255,0.03);
+            border-radius: 12px;
+            min-height: 100px;
+            max-width: 240px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .image-preview img {
+            width: 90px;
+            height: 90px;
+            border-radius: 12px;
+            object-fit: cover;
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
+        }
+
+        .image-preview-label {
+            font-size: 13px;
+            color: #c0c2d0;
+            line-height: 1.4;
+        }
 
         #file-input { display: none; }
     </style>
@@ -142,33 +177,32 @@
 <body>
 
     <div id="chat-container">
-        <div class="message ai-msg">👋 Hello, I'm Nexus AI. I'm loading all my models... Please wait a moment.</div>
+        <div class="message ai-msg">Hello, I'm Nexus AI. Loading models. Please wait a moment.</div>
     </div>
 
     <div class="input-area">
         <div class="input-wrapper">
             <!-- Upload Button -->
-            <button class="btn-icon" onclick="document.getElementById('file-input').click()" title="Upload image">📎</button>
+            <button class="btn-icon" onclick="document.getElementById('file-input').click()" title="Upload image">Upload</button>
             <input type="file" id="file-input" accept="image/*">
             
-            <!-- Microphone Button -->
-            <button class="btn-icon" onclick="startVoiceRecognition()" title="Voice recognition">🎤</button>
-            
             <!-- Text Input -->
-            <textarea id="user-input" rows="1" placeholder="Type your question or message..."></textarea>
+            <textarea id="user-input" rows="1" placeholder="Type your instructions and press Enter to send..."></textarea>
             
             <!-- Send Button -->
-            <button class="btn-icon" onclick="handleSend()" title="Send">➡️</button>
+            <button class="btn-icon" onclick="handleSend()" title="Send">Send</button>
+            <div id="image-preview" class="image-preview"></div>
         </div>
     </div>
 
     <script>
-        let visionModel, toxicityModel, recognizer;
+        let visionModel, toxicityModel;
         let cocoSsdModel, poseNetModel, faceLandmarksModel;
         let handposeModel, bodyPixModel, blazefaceModel, knnClassifierModel;
         let useModel, qnaModel;
         let lastLanguage = 'en';
-        let isListening = false;
+        let pendingImageFile = null;
+        let pendingImageUrl = null;
         let isProcessing = false;
         let conversationHistory = [];
 
@@ -300,7 +334,7 @@
                     .replace(/log/g, 'Math.log10')
                     .replace(/ln/g, 'Math.log');
                 
-                if (!/^[0-9+\-*/(). MathsqrtgincotnloxabetAB^]+$/.test(enhanced)) return null;
+                if (!/^[0-9+\-*/().Math.sqrt.sin.cos.tan.log\s^]+$/.test(enhanced)) return null;
                 const result = new Function('return ' + enhanced)();
                 return isFinite(result) ? result : null;
             } catch (e) { return null; }
@@ -311,8 +345,8 @@
             // English
             "hello": "Hello! I'm your local AI assistant. I can analyze images, detect toxicity in text, recognize your voice, and answer questions.",
             "hi": "Hi there! I'm Nexus AI, your local artificial intelligence. How can I help you today?",
-            "what are you": "I'm a local AI that runs in your browser using TensorFlow.js, MobileNet for vision, Toxicity for content moderation, and Speech Commands for voice recognition.",
-            "help": "I can help you with:\n📷 Advanced image analysis (4 AI models)\n🎯 Object detection (COCO-SSD)\n🏃 Pose detection (PoseNet)\n👤 Facial analysis (Face Landmarks)\n⚠️ Content moderation\n🎤 Voice commands\n🧮 Math problem solving\n💬 Questions in EN/ES",
+            "what are you": "I'm a local AI that runs in your browser using TensorFlow.js, MobileNet for vision, and Toxicity for content moderation.",
+            "help": "I can help you with:\nAdvanced image analysis (4 AI models)\nObject detection (COCO-SSD)\nPose detection (PoseNet)\nFacial analysis (Face Landmarks)\nContent moderation\nMath problem solving\nQuestions in EN/ES",
             "who are you": "I'm Nexus AI, a local artificial intelligence that runs completely in your browser.",
             "thanks": "You're welcome! I'm here to help you with whatever you need.",
             "thank you": "You're welcome! I'm here to help you with whatever you need.",
@@ -320,37 +354,42 @@
             "bye": "Goodbye! See you later when you need help.",
             "time": () => new Date().toLocaleTimeString('en-US'),
             "date": () => new Date().toLocaleDateString('en-US'),
-            "libraries": "I'm using: TensorFlow.js (foundation), MobileNet (vision), Toxicity (moderation), and Speech Commands (voice)",
-            "capabilities": "My advanced capabilities include:\n✓ MobileNet image classification\n✓ COCO-SSD object detection\n✓ PoseNet human pose detection\n✓ Face landmarks facial analysis\n✓ Toxicity content moderation\n✓ Speech command recognition\n✓ Mathematical calculations\n✓ Multilingual responses (EN/ES)",
+            "libraries": "I'm using: TensorFlow.js (foundation), MobileNet (vision), and Toxicity (moderation).",
+            "capabilities": "My advanced capabilities include:\n- MobileNet image classification\n- COCO-SSD object detection\n- PoseNet human pose detection\n- Face landmarks facial analysis\n- Toxicity content moderation\n- Mathematical calculations\n- Multilingual responses (EN/ES)",
             "tensorflow": "TensorFlow.js is the foundation of my AI. It allows me to run machine learning models in your browser without sending data to external servers.",
             "mobilenet": "MobileNet is a convolutional neural network model I use to classify images. It can identify over 1000 different object categories.",
             "toxicity": "The toxicity model analyzes text to detect potentially offensive or harmful language. It's useful for content moderation.",
-            "voice": "I recognize voice commands using Speech Commands. I can understand keywords in various languages.",
+            "voice": "I can answer text and image-based questions. I process everything locally.",
             "are you an ai": "Yes, I'm an artificial intelligence, but local. Everything runs in your browser without internet connection (except for initial model loading).",
             "working": "Yes, everything is working perfectly. Now I have all my libraries loaded and can help you with multiple tasks.",
-            "image": "I can analyze images using MobileNet. Just click on 📎 and upload a photo. I'll tell you what object I think it is.",
+            "image": "I can analyze images using MobileNet. Select a file and press Enter to upload it with instructions.",
             "security": "Privacy is important: everything is processed locally in your browser. Your data is not sent to any external server.",
             "how are you": "I'm functioning well, thank you for asking! Ready to help you with image analysis, voice commands, or any questions.",
-            "features": "My main features are:\n📷 Image recognition with MobileNet\n🎤 Voice command detection\n⚠️ Content toxicity detection\n💬 Intelligent Q&A\n🔒 Local processing for privacy",
-            "models": "I use 6 AI models:\n🤖 MobileNet: General image classification\n🎯 COCO-SSD: Precise object detection\n🏃 PoseNet: Human pose estimation\n👤 Face Landmarks: Facial feature detection\n⚠️ Toxicity: Content moderation\n🎤 Speech Commands: Voice recognition",
+            "features": "My main features are:\n- Image recognition with MobileNet\n- Content toxicity detection\n- Intelligent Q&A\n- Local processing for privacy",
+            "models": "I use multiple AI models:\n- MobileNet: General image classification\n- COCO-SSD: Precise object detection\n- PoseNet: Human pose estimation\n- Face Landmarks: Facial feature detection\n- Toxicity: Content moderation",
             "coco-ssd": "COCO-SSD is an advanced object detection model that can identify specific objects like cars, people, animals, and household items with high precision.",
             "posenet": "PoseNet detects human poses and body positions. It can identify key body points and estimate pose confidence.",
             "face": "Face Landmarks Detection analyzes facial features and can detect faces with detailed landmark points for expressions and features.",
             "analysis": "My image analysis uses 4 different AI models for comprehensive results: classification, object detection, pose detection, and facial analysis.",
             // Spanish
             "hola": "¡Hola! Soy tu asistente de IA local. Puedo analizar imágenes, detectar toxicidad en textos, reconocer tu voz y responder preguntas.",
-            "qué eres": "Soy una IA local que ejecuta en tu navegador usando TensorFlow.js, MobileNet para visión, Toxicity para moderar contenido y reconocimiento de voz.",
-            "ayuda": "Puedo ayudarte con:\n📷 Análisis avanzado de imágenes (4 modelos IA)\n🎯 Detección de objetos (COCO-SSD)\n🏃 Detección de poses (PoseNet)\n👤 Análisis facial (Face Landmarks)\n⚠️ Moderación de contenido\n🎤 Comandos de voz\n🧮 Resolver problemas matemáticos\n💬 Preguntas en ES/EN",
+            "qué eres": "Soy una IA local que ejecuta en tu navegador usando TensorFlow.js, MobileNet para visión y Toxicity para moderar contenido.",
+            "ayuda": "Puedo ayudarte con:\n- Análisis avanzado de imágenes (4 modelos IA)\n- Detección de objetos (COCO-SSD)\n- Detección de poses (PoseNet)\n- Análisis facial (Face Landmarks)\n- Moderación de contenido\n- Resolver problemas matemáticos\n- Preguntas en ES/EN",
+            "aiuda": "Puedo ayudarte con:\n- Análisis avanzado de imágenes (4 modelos IA)\n- Detección de objetos (COCO-SSD)\n- Detección de poses (PoseNet)\n- Análisis facial (Face Landmarks)\n- Moderación de contenido\n- Resolver problemas matemáticos\n- Preguntas en ES/EN",
             "quién eres": "Soy Nexus AI, una inteligencia artificial local que funciona completamente en tu navegador.",
             "gracias": "¡De nada! Estoy aquí para ayudarte en lo que necesites.",
             "adiós": "¡Hasta luego! Vuelve cuando necesites ayuda.",
             "hora": () => new Date().toLocaleTimeString('es-ES'),
             "fecha": () => new Date().toLocaleDateString('es-ES'),
-            "librerías": "Estoy usando: TensorFlow.js (base), MobileNet (visión), Toxicity (moderación) y Speech Commands (voz)",
-            "capacidades": "Mis capacidades avanzadas incluyen:\n✓ Clasificación de imágenes MobileNet\n✓ Detección de objetos COCO-SSD\n✓ Detección de poses PoseNet\n✓ Análisis facial Face Landmarks\n✓ Moderación de contenido Toxicity\n✓ Reconocimiento de comandos de voz\n✓ Cálculos matemáticos\n✓ Respuestas multilingües (ES/EN)",
-            "imagen": "Puedo analizar imágenes usando MobileNet. Solo haz clic en 📎 y sube una foto. Te diré qué objeto cree que es.",
+            "librerías": "Estoy usando: TensorFlow.js (base), MobileNet (visión) y Toxicity (moderación)",
+            "capacidades": "Mis capacidades avanzadas incluyen:\n- Clasificación de imágenes MobileNet\n- Detección de objetos COCO-SSD\n- Detección de poses PoseNet\n- Análisis facial Face Landmarks\n- Moderación de contenido Toxicity\n- Cálculos matemáticos\n- Respuestas multilingües (ES/EN)",
+            "imagen": "Puedo analizar imágenes usando MobileNet. Solo selecciona un archivo y pulsa Enter para enviar la imagen con tus instrucciones.",
             "seguridad": "La privacidad es importante: todo se procesa localmente en tu navegador. Tus datos no se envían a ningún servidor externo.",
-            "cómo estás": "¡Funcionando bien, gracias por preguntar! Listo para ayudarte con análisis de imágenes, comandos de voz o cualquier pregunta.",
+            "cómo estás": "¡Funcionando bien, gracias por preguntar! Listo para ayudarte con análisis de imágenes o cualquier pregunta.",
+            "what is ai": "AI stands for Artificial Intelligence. It refers to the simulation of human intelligence in machines designed to think, learn, and perform tasks that typically require human intelligence.",
+            "qué es ia": "IA significa Inteligencia Artificial. Se refiere a la simulación de la inteligencia humana en máquinas diseñadas para pensar, aprender y realizar tareas que normalmente requieren inteligencia humana.",
+            "how do you work": "I work by running advanced machine learning models directly in your web browser using TensorFlow.js. This ensures your data stays private and local.",
+            "cómo funcionas": "Funciono ejecutando modelos avanzados de aprendizaje automático directamente en tu navegador web usando TensorFlow.js. Esto asegura que tus datos se mantengan privados y locales.",
         };
 
         // Optimized response function with advanced math support
@@ -431,23 +470,23 @@
 
             if (lower.includes('?')) {
                 const qa = {
-                    es: ['¿Cómo puedo ayudarte?', 'Interesante pregunta.', '¿Algo más?'],
+                    es: ['¿Cómo puedo ayudarte?', 'Esa es una buena pregunta.', '¿Algo más?'],
                     en: ['How can I help?', 'That\'s a good question.', 'Anything else?', 'I\'m here to assist.']
                 };
                 return qa[lang][Math.floor(Math.random() * qa[lang].length)];
             }
 
             const defaults = {
-                es: ['Entiendo.', 'Interesante.', '¿Necesitas ayuda?'],
-                en: ['I understand.', 'Interesting.', 'How can I help?']
+                es: ['Estoy aquí para ayudarte. ¿En qué puedo asistirte?', '¿Cómo puedo ayudarte hoy?', 'Dime qué necesitas.'],
+                en: ['I\'m here to help. How can I assist you?', 'What can I help you with today?', 'Let me know what you need.']
             };
             return defaults[lang][Math.floor(Math.random() * defaults[lang].length)];
         }
 
         // Load advanced AI models
         async function init() {
-            console.log("🤖 Initializing Advanced Nexus AI...");
-            appendMessage("⏳ Loading many advanced AI models...", false);
+            console.log("Initializing Advanced Nexus AI...");
+            appendMessage("Loading many advanced AI models...", false);
             
             try {
                 // Core models
@@ -465,58 +504,44 @@
                 poseNetModel = await posenet.load();
                 
                 console.log("📥 Loading Face Landmarks...");
-                try {
-                    // Try different loading methods for face landmarks
-                    if (typeof faceLandmarksDetection !== 'undefined' && faceLandmarksDetection.load) {
-                        if (faceLandmarksDetection.SupportedPackages && faceLandmarksDetection.SupportedPackages.mediapipeFacemesh) {
-                            faceLandmarksModel = await faceLandmarksDetection.load(
-                                faceLandmarksDetection.SupportedPackages.mediapipeFacemesh
-                            );
-                        } else {
-                            faceLandmarksModel = await faceLandmarksDetection.load();
-                        }
+                if (typeof faceLandmarksDetection !== 'undefined' && faceLandmarksDetection.load) {
+                    if (faceLandmarksDetection.SupportedPackages && faceLandmarksDetection.SupportedPackages.mediapipeFacemesh) {
+                        faceLandmarksModel = await faceLandmarksDetection.load(
+                            faceLandmarksDetection.SupportedPackages.mediapipeFacemesh
+                        );
                     } else {
-                        console.log("⚠️ Face Landmarks library not available");
-                        faceLandmarksModel = null;
+                        faceLandmarksModel = await faceLandmarksDetection.load();
                     }
-                } catch (faceError) {
-                    console.log("⚠️ Face Landmarks model failed to load:", faceError.message);
+                } else {
+                    console.log("Face Landmarks library not available");
                     faceLandmarksModel = null;
                 }
-                
-                console.log("📥 Loading Handpose...");
                 handposeModel = await handpose.load();
                 
                 console.log("📥 Loading BodyPix...");
                 bodyPixModel = await bodyPix.load();
                 
-                console.log("📥 Loading BlazeFace...");
+                console.log("Loading BlazeFace...");
                 blazefaceModel = await blazeface.load();
                 
-                console.log("📥 Loading KNN Classifier...");
-                const classifier = typeof knnClassifier !== 'undefined' && knnClassifier.create ? knnClassifier.create() : null;
-                knnClassifierModel = classifier;
+                console.log("Loading KNN Classifier...");
+                knnClassifierModel = typeof knnClassifier !== 'undefined' && knnClassifier.KNNClassifier ? new knnClassifier.KNNClassifier() : null;
                 
-                console.log("📥 Loading Universal Sentence Encoder...");
+                console.log("Loading Universal Sentence Encoder...");
                 useModel = await use.load();
                 
                 console.log("📥 Loading QnA model...");
                 qnaModel = await qna.load();
                 
-                // Speech recognition
-                console.log("📥 Loading Speech Commands...");
-                recognizer = await speechCommands.create("BROWSER_FFT");
-                await recognizer.ensureModelLoaded();
-                
                 // Success message
                 const chatContainer = document.getElementById('chat-container');
                 const lastMsg = chatContainer.lastChild;
                 if (lastMsg && lastMsg.innerText.includes("Loading")) {
-                    lastMsg.innerText = "🎉 Advanced AI System Ready!\n\nLoaded many advanced AI models:\n🤖 MobileNet (classification)\n🎯 COCO-SSD (objects)\n🏃 PoseNet (poses)\n👤 Face Landmarks (faces)\n🤏 Handpose (hands)\n🧍 BodyPix (segmentation)\n⚡ BlazeFace (fast faces)\n🧠 KNN Classifier (learning)\n🔤 Universal Sentence Encoder\n❓ QnA model\n⚠️ Toxicity (moderation)\n🎤 Speech Commands (voice)\n\nI'm now super intelligent! Ask me anything in the last language you used, and I'll think before answering.";
+                    lastMsg.innerText = "Advanced AI System Ready.\n\nLoaded many advanced AI models:\nMobileNet (classification)\nCOCO-SSD (objects)\nPoseNet (poses)\nFace Landmarks (faces)\nHandpose (hands)\nBodyPix (segmentation)\nBlazeFace (fast faces)\nKNN Classifier (learning)\nUniversal Sentence Encoder\nQnA model\nToxicity (moderation)\n\nThe system is now ready. Ask anything in the last language you used, and it will think before answering.";
                 }
             } catch (error) {
                 console.error("Error loading models:", error);
-                appendMessage("⚠️ Some advanced models failed to load, but core functionality is available.", false);
+                appendMessage("Some advanced models failed to load, but core functionality is available.", false);
             }
         }
 
@@ -572,7 +597,7 @@
 
         async function handleSend() {
             const text = userInput.value.trim();
-            if (!text || isProcessing) return;
+            if ((!text && !pendingImageFile) || isProcessing) return;
 
             isProcessing = true;
             disableInput(true);
@@ -583,7 +608,16 @@
             // Add to conversation history
             conversationHistory.push({ role: 'user', content: text, language: lastLanguage });
             
-            appendMessage(text, true);
+            const imageUrlToAnalyze = pendingImageUrl;
+            if (pendingImageFile) {
+                appendMessage(text || 'Image sent with instructions.', true, pendingImageUrl);
+                document.getElementById('image-preview').innerHTML = '';
+                pendingImageFile = null;
+                pendingImageUrl = null;
+            } else {
+                appendMessage(text, true);
+            }
+
             userInput.value = '';
             showThinking();
 
@@ -597,13 +631,16 @@
                     hideThinking();
                     if (isToxic) {
                         const warning = lastLanguage === 'es'
-                            ? '⚠️ He detectado lenguaje inapropiado. Por favor, reformula tu mensaje respetuosamente.'
-                            : '⚠️ I have detected inappropriate language. Please rephrase your message respectfully.';
+                            ? 'He detectado lenguaje inapropiado. Por favor, reformula tu mensaje respetuosamente.'
+                            : 'I have detected inappropriate language. Please rephrase your message respectfully.';
                         appendMessage(warning, false);
                     } else {
                         const response = await generateSmartResponse(text, context);
                         appendMessage(response, false);
                         conversationHistory.push({ role: 'assistant', content: response, language: lastLanguage });
+                        if (typeof imageUrlToAnalyze !== 'undefined' && imageUrlToAnalyze) {
+                            await analyzeImage(imageUrlToAnalyze);
+                        }
                     }
                     isProcessing = false;
                     disableInput(false);
@@ -616,193 +653,87 @@
             }
         }
 
-        // Ultra-advanced image analysis with 7 AI models
-        document.getElementById('file-input').onchange = async (e) => {
+        document.getElementById('file-input').onchange = (e) => {
             const file = e.target.files[0];
             if (!file) return;
 
-            isProcessing = true;
-            disableInput(true);
-            
-            const url = URL.createObjectURL(file);
-            appendMessage("🔬 Analyzing with 7 advanced AI models...", true, url);
+            if (pendingImageUrl) {
+                URL.revokeObjectURL(pendingImageUrl);
+            }
 
-            const img = new Image();
-            img.src = url;
-            img.onload = async () => {
-                try {
-                    let analysisResults = "🧠 Ultra-Advanced AI Analysis Results:\n\n";
+            pendingImageFile = file;
+            pendingImageUrl = URL.createObjectURL(file);
 
-                    // 1. MobileNet Classification
-                    if (visionModel) {
-                        const predictions = await visionModel.classify(img);
-                        analysisResults += "🤖 MobileNet Classification:\n";
-                        predictions.slice(0, 10).forEach((pred, i) => {
-                            const percentage = (pred.probability * 100).toFixed(1);
-                            const confidence = percentage >= 60 ? '🔥' : percentage >= 40 ? '✓' : percentage >= 20 ? '◐' : '◯';
-                            analysisResults += `${confidence} ${pred.className} (${percentage}%)\n`;
-                        });
-                        analysisResults += "\n";
-                    }
+            const preview = document.getElementById('image-preview');
+            preview.innerHTML = '';
 
-                    // 2. COCO-SSD Object Detection
-                    if (cocoSsdModel) {
-                        const detections = await cocoSsdModel.detect(img);
-                        if (detections.length > 0) {
-                            analysisResults += "🎯 COCO-SSD Object Detection:\n";
-                            detections.slice(0, 8).forEach((detection, i) => {
-                                const score = (detection.score * 100).toFixed(1);
-                                analysisResults += `🎯 ${detection.class} (${score}%)\n`;
-                            });
-                            analysisResults += "\n";
-                        }
-                    }
+            const img = document.createElement('img');
+            img.src = pendingImageUrl;
+            img.alt = 'Image preview';
+            preview.appendChild(img);
 
-                    // 3. PoseNet Pose Detection
-                    if (poseNetModel) {
-                        const pose = await poseNetModel.estimateSinglePose(img);
-                        if (pose.score > 0.2) {
-                            analysisResults += "🏃 PoseNet Human Pose:\n";
-                            analysisResults += `👤 Pose detected (${(pose.score * 100).toFixed(1)}% confidence)\n`;
-                            const keypointCount = pose.keypoints.filter(kp => kp.score > 0.5).length;
-                            analysisResults += `📍 ${keypointCount} body keypoints identified\n\n`;
-                        }
-                    }
-
-                    // 4. Face Landmarks Detection
-                    if (faceLandmarksModel) {
-                        const faces = await faceLandmarksModel.estimateFaces(img);
-                        if (faces.length > 0) {
-                            analysisResults += "👤 Face Landmarks Analysis:\n";
-                            analysisResults += `😊 ${faces.length} face(s) detected\n`;
-                            faces.forEach((face, i) => {
-                                const score = (face.faceInViewConfidence * 100).toFixed(1);
-                                analysisResults += `Face ${i + 1}: ${score}% confidence\n`;
-                            });
-                            analysisResults += "\n";
-                        }
-                    }
-
-                    // 5. Handpose Detection
-                    if (handposeModel) {
-                        const hands = await handposeModel.estimateHands(img);
-                        if (hands.length > 0) {
-                            analysisResults += "🤏 Handpose Detection:\n";
-                            analysisResults += `✋ ${hands.length} hand(s) detected\n`;
-                            hands.forEach((hand, i) => {
-                                analysisResults += `Hand ${i + 1}: ${hand.handedness} (${(hand.score * 100).toFixed(1)}%)\n`;
-                            });
-                            analysisResults += "\n";
-                        }
-                    }
-
-                    // 6. BodyPix Segmentation
-                    if (bodyPixModel) {
-                        const segmentation = await bodyPixModel.segmentPerson(img);
-                        const personPixels = segmentation.data.reduce((sum, val) => sum + val, 0);
-                        const totalPixels = segmentation.width * segmentation.height;
-                        const personPercentage = ((personPixels / totalPixels) * 100).toFixed(1);
-                        
-                        if (personPercentage > 5) {
-                            analysisResults += "🧍 BodyPix Body Segmentation:\n";
-                            analysisResults += `👤 Person occupies ${personPercentage}% of image\n`;
-                            analysisResults += "🎨 Body parts segmented and analyzed\n\n";
-                        }
-                    }
-
-                    // 7. BlazeFace Fast Detection
-                    if (blazefaceModel) {
-                        const blazeFaces = await blazefaceModel.estimateFaces(img, false);
-                        if (blazeFaces.length > 0) {
-                            analysisResults += "⚡ BlazeFace Fast Detection:\n";
-                            analysisResults += `🚀 ${blazeFaces.length} face(s) detected rapidly\n`;
-                            analysisResults += "💨 Optimized for speed and real-time use\n\n";
-                        }
-                    }
-
-                    // AI Summary
-                    analysisResults += "🎯 AI Summary: Image analyzed with 7 cutting-edge models for comprehensive understanding.";
-
-                    appendMessage(analysisResults, false);
-                } catch (error) {
-                    appendMessage("❌ Error in advanced analysis: " + error.message, false);
-                } finally {
-                    isProcessing = false;
-                    disableInput(false);
-                }
-            };
-            img.onerror = () => {
-                appendMessage("❌ Could not load the image", false);
-                isProcessing = false;
-                disableInput(false);
-            };
+            const label = document.createElement('div');
+            label.className = 'image-preview-label';
+            label.innerText = 'Image selected. Press Enter to send it with your instructions.';
+            preview.appendChild(label);
         };
 
-        // Improved voice recognition
-        async function startVoiceRecognition() {
-            if (!recognizer) {
-                appendMessage("❌ Voice recognition is not yet available. Wait for it to load completely.", false);
-                return;
-            }
-
-            if (isListening) {
-                appendMessage("⚠️ I'm already listening...", false);
-                return;
-            }
-
-            if (isProcessing) {
-                appendMessage("⚠️ I'm still processing the previous message. Please wait.", false);
-                return;
-            }
-
-            isListening = true;
-            isProcessing = true;
-            disableInput(true);
-            
-            appendMessage("🎤 Listening for voice command... (please wait)", true);
-
-            const words = recognizer.wordList();
-            console.log("Available words:", words);
+        async function analyzeImage(imageUrl) {
+            if (!imageUrl) return;
+            const img = new Image();
+            img.src = imageUrl;
+            await new Promise((resolve, reject) => {
+                img.onload = resolve;
+                img.onerror = reject;
+            });
 
             try {
-                const result = await recognizer.listen(
-                    async (output) => {
-                        const scores = output.scores;
-                        let maxScore = 0;
-                        let maxIndex = 0;
+                let analysisResults = 'Advanced image analysis results:\n\n';
 
-                        scores.forEach((score, i) => {
-                            if (score > maxScore) {
-                                maxScore = score;
-                                maxIndex = i;
-                            }
-                        });
-
-                        if (maxScore > 0.7) {
-                            const command = words[maxIndex];
-                            console.log(`Detected: ${command} (confidence: ${maxScore.toFixed(2)})`);
-                            appendMessage(`🎤 Command recognized: "${command}" (confidence: ${(maxScore * 100).toFixed(1)}%)`, true);
-                            
-                            const response = await getResponse(command);
-                            setTimeout(() => {
-                                appendMessage(response, false);
-                                isProcessing = false;
-                                disableInput(false);
-                            }, 600);
-                        }
-                    },
-                    { probabilityThreshold: 0.7 }
-                );
-            } catch (error) {
-                console.log("Recognition finished");
-            } finally {
-                isListening = false;
-                if (isProcessing) {
-                    isProcessing = false;
-                    disableInput(false);
+                if (visionModel) {
+                    const predictions = await visionModel.classify(img);
+                    analysisResults += 'MobileNet classification:\n';
+                    predictions.slice(0, 6).forEach(pred => {
+                        const percentage = (pred.probability * 100).toFixed(1);
+                        analysisResults += `${pred.className} (${percentage}%)\n`;
+                    });
+                    analysisResults += '\n';
                 }
+
+                if (cocoSsdModel) {
+                    const detections = await cocoSsdModel.detect(img);
+                    if (detections.length > 0) {
+                        analysisResults += 'COCO-SSD object detection:\n';
+                        detections.slice(0, 6).forEach(detection => {
+                            const score = (detection.score * 100).toFixed(1);
+                            analysisResults += `${detection.class} (${score}%)\n`;
+                        });
+                        analysisResults += '\n';
+                    }
+                }
+
+                if (poseNetModel) {
+                    const pose = await poseNetModel.estimateSinglePose(img);
+                    if (pose.score > 0.2) {
+                        analysisResults += 'PoseNet human pose detection:\n';
+                        analysisResults += `Pose confidence: ${(pose.score * 100).toFixed(1)}%\n`;
+                        analysisResults += '\n';
+                    }
+                }
+
+                if (faceLandmarksModel) {
+                    const faces = await faceLandmarksModel.estimateFaces(img);
+                    if (faces.length > 0) {
+                        analysisResults += 'Face detection:\n';
+                        analysisResults += `${faces.length} face(s) detected\n\n`;
+                    }
+                }
+
+                appendMessage(analysisResults, false);
+            } catch (error) {
+                appendMessage('Error analyzing image: ' + error.message, false);
             }
-        }
+        };
 
         // Press Enter to send
         userInput.addEventListener("keypress", (e) => {
