@@ -17,7 +17,9 @@
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/knn-classifier"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/universal-sentence-encoder"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/qna"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/translation"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/sentiment"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mathjs@12.4.2/lib/browser/math.js"></script>
 
     <style>
         * { box-sizing: border-box; }
@@ -200,6 +202,7 @@
         let cocoSsdModel, poseNetModel, faceLandmarksModel;
         let handposeModel, bodyPixModel, blazefaceModel, knnClassifierModel;
         let useModel, qnaModel;
+        let translationModel, sentimentModel;
         let lastLanguage = 'en';
         let pendingImageFile = null;
         let pendingImageUrl = null;
@@ -207,7 +210,7 @@
         let conversationHistory = [];
 
         // Advanced AI reasoning and context awareness
-        function analyzeContext(text) {
+        async function analyzeContext(text) {
             const lower = text.toLowerCase();
             const context = {
                 isQuestion: lower.includes('?') || lower.startsWith('what') || lower.startsWith('how') || lower.startsWith('why') || lower.startsWith('when') || lower.startsWith('where') || lower.startsWith('who'),
@@ -215,7 +218,7 @@
                 isImageRelated: lower.includes('image') || lower.includes('photo') || lower.includes('picture') || lower.includes('analyze'),
                 isVoiceRelated: lower.includes('voice') || lower.includes('speak') || lower.includes('listen'),
                 isHelpRequest: lower.includes('help') || lower.includes('what can you do'),
-                sentiment: analyzeSentiment(text),
+                sentiment: await getSentiment(text),
                 complexity: analyzeComplexity(text)
             };
             return context;
@@ -327,17 +330,48 @@
                 // Support fractions, powers, square roots, etc
                 const enhanced = clean
                     .replace(/\^/g, '**')
-                    .replace(/√/g, 'Math.sqrt')
-                    .replace(/sin/g, 'Math.sin')
-                    .replace(/cos/g, 'Math.cos')
-                    .replace(/tan/g, 'Math.tan')
-                    .replace(/log/g, 'Math.log10')
-                    .replace(/ln/g, 'Math.log');
+                    .replace(/√/g, 'sqrt')
+                    .replace(/sin/g, 'sin')
+                    .replace(/cos/g, 'cos')
+                    .replace(/tan/g, 'tan')
+                    .replace(/log/g, 'log10')
+                    .replace(/ln/g, 'log');
                 
-                if (!/^[0-9+\-*/().Math.sqrt.sin.cos.tan.log\s^]+$/.test(enhanced)) return null;
-                const result = new Function('return ' + enhanced)();
+                const result = math.evaluate(enhanced);
                 return isFinite(result) ? result : null;
             } catch (e) { return null; }
+        }
+
+        // Web search using Wikipedia API
+        async function searchWikipedia(query) {
+            const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`;
+            try {
+                const response = await fetch(url);
+                if (!response.ok) return null;
+                const data = await response.json();
+                if (data.extract) {
+                    return `${data.extract}\n\nURL: ${data.content_urls?.desktop?.page || 'https://en.wikipedia.org/wiki/' + encodeURIComponent(query)}`;
+                }
+            } catch (e) {
+                console.warn('Wikipedia search failed:', e);
+            }
+            return null;
+        }
+
+        // Sentiment analysis using model
+        async function getSentiment(text) {
+            if (sentimentModel) {
+                try {
+                    const result = await sentimentModel.classify(text);
+                    const score = result[0];
+                    if (score > 0.2) return 'positive';
+                    if (score < -0.2) return 'negative';
+                    return 'neutral';
+                } catch (e) {
+                    console.warn('Sentiment model failed:', e);
+                }
+            }
+            return analyzeSentiment(text); // fallback
         }
 
         // Knowledge base for answering questions (English, Spanish, French)
@@ -421,21 +455,6 @@
                 return typeof result === 'function' ? result() : result;
             }
 
-            // QnA fallback using loaded QnA model
-            if (qnaModel && lower.includes('?')) {
-                try {
-                    const passage = Object.entries(knowledge)
-                        .map(([key, value]) => `${key}: ${typeof value === 'function' ? value() : value}`)
-                        .join('\n');
-                    const answers = await qnaModel.findAnswers(text, passage);
-                    if (answers && answers.length > 0 && answers[0].score > 0.4) {
-                        return answers[0].text;
-                    }
-                } catch (e) {
-                    console.warn('QnA fallback failed:', e.message);
-                }
-            }
-
             // Semantic similarity fallback using Universal Sentence Encoder
             if (useModel) {
                 try {
@@ -458,13 +477,21 @@
                         }
                     }
                     embeddings.dispose();
-                    if (bestScore > 0.70) {
+                    if (bestScore > 0.60) {
                         const selected = keys[bestIndex];
                         const result = knowledge[selected];
                         return typeof result === 'function' ? result() : result;
                     }
                 } catch (e) {
                     console.warn('USE semantic fallback failed:', e.message);
+                }
+            }
+
+            // Web search for unknown questions
+            if (lower.includes('?')) {
+                const wikiResult = await searchWikipedia(text);
+                if (wikiResult) {
+                    return wikiResult;
                 }
             }
 
@@ -477,8 +504,8 @@
             }
 
             const defaults = {
-                es: ['Estoy aquí para ayudarte. ¿En qué puedo asistirte?', '¿Cómo puedo ayudarte hoy?', 'Dime qué necesitas.'],
-                en: ['I\'m here to help. How can I assist you?', 'What can I help you with today?', 'Let me know what you need.']
+                es: ['Déjame pensar en eso.', 'Esa es una pregunta interesante, permíteme reflexionar.', 'Voy a analizarlo.'],
+                en: ['Let me think about that.', 'That\'s an interesting question, let me reflect.', 'I\'ll analyze it.']
             };
             return defaults[lang][Math.floor(Math.random() * defaults[lang].length)];
         }
@@ -530,14 +557,17 @@
                 console.log("Loading Universal Sentence Encoder...");
                 useModel = await use.load();
                 
-                console.log("📥 Loading QnA model...");
-                qnaModel = await qna.load();
+                console.log("Loading Translation model...");
+                translationModel = await translation.load();
+                
+                console.log("Loading Sentiment model...");
+                sentimentModel = await sentiment.load();
                 
                 // Success message
                 const chatContainer = document.getElementById('chat-container');
                 const lastMsg = chatContainer.lastChild;
                 if (lastMsg && lastMsg.innerText.includes("Loading")) {
-                    lastMsg.innerText = "Advanced AI System Ready.\n\nLoaded many advanced AI models:\nMobileNet (classification)\nCOCO-SSD (objects)\nPoseNet (poses)\nFace Landmarks (faces)\nHandpose (hands)\nBodyPix (segmentation)\nBlazeFace (fast faces)\nKNN Classifier (learning)\nUniversal Sentence Encoder\nQnA model\nToxicity (moderation)\n\nThe system is now ready. Ask anything in the last language you used, and it will think before answering.";
+                    lastMsg.innerText = "Advanced AI System Ready.\n\nLoaded many advanced AI models:\nMobileNet (classification)\nCOCO-SSD (objects)\nPoseNet (poses)\nFace Landmarks (faces)\nHandpose (hands)\nBodyPix (segmentation)\nBlazeFace (fast faces)\nKNN Classifier (learning)\nUniversal Sentence Encoder\nTranslation\nSentiment\nToxicity (moderation)\n\nThe system is now ready. Ask anything in the last language you used, and it will think before answering.";
                 }
             } catch (error) {
                 console.error("Error loading models:", error);
@@ -622,7 +652,7 @@
             showThinking();
 
             try {
-                const context = analyzeContext(text);
+                const context = await analyzeContext(text);
                 
                 const predictions = await toxicityModel.classify([text]);
                 const isToxic = predictions.filter(p => p.results[0].match).length > 0;
