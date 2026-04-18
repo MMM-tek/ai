@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nexus AI</title>
+
+    <!-- Importing local files from node_modules -->
+    <script src="./tf.min.js"></script>
+    <script src="./mobilenet.min.js"></script>
+    <script src="./speech-commands.min.js"></script>
+    <script src="./toxicity.min.js"></script>
+
+    <style>
+        body {
+            background-color: #121212;
+            color: #e0e0e0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 600px;
+        }
+
+        .card {
+            background-color: #1e1e1e;
+            border: 1px solid #333;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
+
+        h1 { color: #00e676; }
+        h3 { color: #03a9f4; margin-top: 0; }
+
+        input, button {
+            background-color: #333;
+            color: white;
+            border: 1px solid #444;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 10px;
+            box-sizing: border-box;
+        }
+
+        button:hover { background-color: #444; border-color: #00e676; }
+
+        .result {
+            margin-top: 15px;
+            padding: 10px;
+            background: #252525;
+            border-left: 4px solid #00e676;
+            font-size: 0.9em;
+            min-height: 20px;
+        }
+
+        #imgPreview {
+            max-width: 100%;
+            border-radius: 8px;
+            margin-top: 10px;
+            display: none;
+        }
+
+        .status-dot {
+            height: 10px;
+            width: 10px;
+            background-color: #bbb;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 5px;
+        }
+        .online { background-color: #00e676; }
+    </style>
+</head>
+<body>
+
+    <h1>Nexus AI <small style="font-size: 0.4em; vertical-align: middle; color: #888;">OFFLINE-CORE</small></h1>
+
+    <div class="container">
+        <!-- 1. COMPUTER VISION -->
+        <div class="card">
+            <h3>👁️ Computer Vision</h3>
+            <p>Upload an image to identify objects.</p>
+            <input type="file" accept="image/*" id="imageUpload">
+            <img id="imgPreview">
+            <div id="resVision" class="result">Waiting for image...</div>
+        </div>
+
+        <!-- 2. SPEECH RECOGNITION -->
+        <div class="card">
+            <h3>🎤 Speech Commands</h3>
+            <p>Try saying "Up", "Down", "Left", or "Right".</p>
+            <button onclick="startListening()">Enable Microphone</button>
+            <div id="resVoz" class="result">Microphone is off.</div>
+        </div>
+
+        <!-- 3. TEXT ANALYSIS -->
+        <div class="card">
+            <h3>💬 Toxicity Classifier</h3>
+            <p>Type a sentence to detect offensive content.</p>
+            <input type="text" id="textInput" placeholder="Enter text here...">
+            <button onclick="analyzeText()">Analyze Sentiment</button>
+            <div id="resTexto" class="result">Waiting for input...</div>
+        </div>
+    </div>
+
+    <script>
+        let visionModel, speechModel, toxicityModel;
+
+        // Load all models on startup
+        async function init() {
+            try {
+                console.log("Loading models...");
+                visionModel = await mobilenet.load();
+                toxicityModel = await toxicity.load(0.9);
+                console.log("Models loaded successfully.");
+            } catch (err) {
+                console.error("Error loading models:", err);
+            }
+        }
+
+        // Vision Logic
+        document.getElementById('imageUpload').onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            const img = document.getElementById('imgPreview');
+            img.src = URL.createObjectURL(file);
+            img.style.display = "block";
+            
+            const res = document.getElementById('resVision');
+            res.innerText = "Analyzing...";
+            
+            const predictions = await visionModel.classify(img);
+            res.innerText = `Result: ${predictions[0].className} (${(predictions[0].probability * 100).toFixed(1)}%)`;
+        };
+
+        // Speech Logic
+        async function startListening() {
+            const res = document.getElementById('resVoz');
+            res.innerText = "Initializing mic...";
+            
+            speechModel = speechCommands.create("BROWSER_FFT");
+            await speechModel.ensureModelLoaded();
+            
+            res.innerText = "Listening now...";
+            speechModel.listen(result => {
+                const labels = speechModel.wordLabels();
+                const highestScoreIdx = result.scores.indexOf(Math.max(...result.scores));
+                res.innerText = `Heard: ${labels[highestScoreIdx]}`;
+            }, { 
+                probabilityThreshold: 0.85 
+            });
+        }
+
+        // Toxicity Logic
+        async function analyzeText() {
+            const input = document.getElementById('textInput').value;
+            const res = document.getElementById('resTexto');
+            
+            if(!input) return;
+            
+            res.innerText = "Processing...";
+            const predictions = await toxicityModel.classify([input]);
+            
+            const detected = predictions.filter(p => p.results[0].match);
+            res.innerHTML = detected.length > 0 
+                ? `⚠️ Detected: ${detected.map(t => t.label).join(', ')}` 
+                : "✅ Clean / Friendly text";
+        }
+
+        init();
+    </script>
+</body>
+</html>
