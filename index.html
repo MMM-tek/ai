@@ -17,12 +17,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/knn-classifier"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/universal-sentence-encoder"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/translation"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/sentiment"></script>
     <script src="https://cdn.jsdelivr.net/npm/mathjs@12.4.2/lib/browser/math.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/gpt-2"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/bert"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/electra"></script>
 
     <style>
         * { box-sizing: border-box; }
@@ -205,8 +200,6 @@
         let cocoSsdModel, poseNetModel, faceLandmarksModel;
         let handposeModel, bodyPixModel, blazefaceModel, knnClassifierModel;
         let useModel, qnaModel;
-        let translationModel, sentimentModel;
-        let gpt2Model, bertModel, electraModel;
         let lastLanguage = 'en';
         let pendingImageFile = null;
         let pendingImageUrl = null;
@@ -364,31 +357,12 @@
 
         // Sentiment analysis using model
         async function getSentiment(text) {
-            if (sentimentModel) {
-                try {
-                    const result = await sentimentModel.classify(text);
-                    const score = result[0];
-                    if (score > 0.2) return 'positive';
-                    if (score < -0.2) return 'negative';
-                    return 'neutral';
-                } catch (e) {
-                    console.warn('Sentiment model failed:', e);
-                }
-            }
-            return analyzeSentiment(text); // fallback
+            return analyzeSentiment(text); // fallback to manual
         }
 
         // Translation using model
         async function translateText(text, fromLang, toLang) {
-            if (translationModel && fromLang !== toLang) {
-                try {
-                    const result = await translationModel.translate(text, fromLang, toLang);
-                    return result;
-                } catch (e) {
-                    console.warn('Translation failed:', e);
-                }
-            }
-            return text;
+            return text; // No translation available
         }
 
         // Knowledge base for answering questions (English, Spanish, French)
@@ -513,18 +487,7 @@
             }
 
             // Text generation using GPT-2 for unknown queries
-            if (gpt2Model) {
-                try {
-                    const prompt = `Question: ${text}\nAnswer:`;
-                    const generated = await gpt2Model.generate(prompt, { maxNewTokens: 50 });
-                    if (generated && generated[0] && generated[0].generated_text) {
-                        const answer = generated[0].generated_text.replace(prompt, '').trim();
-                        if (answer) return answer;
-                    }
-                } catch (e) {
-                    console.warn('GPT-2 generation failed:', e);
-                }
-            }
+            // GPT-2 not available due to CORB
 
             if (lower.includes('?')) {
                 const qa = {
@@ -588,51 +551,11 @@
                 console.log("Loading Universal Sentence Encoder...");
                 useModel = await use.load();
                 
-                console.log("Loading Translation model...");
-                if (typeof translation !== 'undefined' && translation.load) {
-                    try {
-                        translationModel = await translation.load();
-                    } catch (e) {
-                        console.log("Translation model failed to load:", e.message);
-                        translationModel = null;
-                    }
-                } else {
-                    console.log("Translation library not available in this browser environment.");
-                    translationModel = null;
-                }
-                
-                console.log("Loading Sentiment model...");
-                sentimentModel = await sentiment.load();
-                
-                console.log("Loading GPT-2 model...");
-                try {
-                    gpt2Model = await gpt2.load();
-                } catch (e) {
-                    console.log("GPT-2 model failed to load:", e.message);
-                    gpt2Model = null;
-                }
-                
-                console.log("Loading BERT model...");
-                try {
-                    bertModel = await bert.load();
-                } catch (e) {
-                    console.log("BERT model failed to load:", e.message);
-                    bertModel = null;
-                }
-                
-                console.log("Loading Electra model...");
-                try {
-                    electraModel = await electra.load();
-                } catch (e) {
-                    console.log("Electra model failed to load:", e.message);
-                    electraModel = null;
-                }
-                
                 // Success message
                 const chatContainer = document.getElementById('chat-container');
                 const lastMsg = chatContainer.lastChild;
                 if (lastMsg && lastMsg.innerText.includes("Loading")) {
-                    lastMsg.innerText = "Advanced AI System Ready.\n\nLoaded many advanced AI models:\nMobileNet (classification)\nCOCO-SSD (objects)\nPoseNet (poses)\nFace Landmarks (faces)\nHandpose (hands)\nBodyPix (segmentation)\nBlazeFace (fast faces)\nKNN Classifier (learning)\nUniversal Sentence Encoder\nTranslation\nSentiment\nGPT-2 (text generation)\nBERT (NLP)\nElectra (classification)\nToxicity (moderation)\n\nThe system is now ready. Ask anything in the last language you used, and it will think before answering.";
+                    lastMsg.innerText = "Advanced AI System Ready.\n\nLoaded many advanced AI models:\nMobileNet (classification)\nCOCO-SSD (objects)\nPoseNet (poses)\nFace Landmarks (faces)\nHandpose (hands)\nBodyPix (segmentation)\nBlazeFace (fast faces)\nKNN Classifier (learning)\nUniversal Sentence Encoder\nToxicity (moderation)\n\nThe system is now ready. Ask anything in the last language you used, and it will think before answering.";
                 }
             } catch (error) {
                 console.error("Error loading models:", error);
@@ -731,9 +654,6 @@
                         appendMessage(warning, false);
                     } else {
                         let response = await generateSmartResponse(text, context);
-                        if (lastLanguage === 'es') {
-                            response = await translateText(response, 'en', 'es');
-                        }
                         appendMessage(response, false);
                         conversationHistory.push({ role: 'assistant', content: response, language: lastLanguage });
                         if (typeof imageUrlToAnalyze !== 'undefined' && imageUrlToAnalyze) {
