@@ -125,6 +125,14 @@
 
         // Block right click menu.
         document.addEventListener('contextmenu', event => event.preventDefault());
+
+        // Block snapshoots
+        window.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && (e.key === 'F5' || e.key === 'MediaAccessory')) {
+            document.body.style.display = 'none';
+            setTimeout(() => document.body.style.display = 'block', 500);
+            }
+        });
     </script>
 </body>
 </html>
