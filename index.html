@@ -122,6 +122,9 @@
                 if (blockedKeys.includes(e.key)) e.preventDefault();
             }
         }, true);
+
+        // Block right click menu.
+        document.addEventListener('contextmenu', event => event.preventDefault());
     </script>
 </body>
 </html>
