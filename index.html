@@ -1,1099 +1,124 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Nexus AI Chat</title>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0/dist/tf.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/toxicity@1.2.2/dist/toxicity.min.js"></script>
-    <!-- Advanced AI models -->
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/posenet@2.2.0/dist/posenet.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/handpose@0.0.7/dist/handpose.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/body-pix@2.2.0/dist/body-pix.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@0.0.7/dist/blazeface.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/knn-classifier@1.2.1/dist/knn-classifier.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/universal-sentence-encoder@1.3.3/dist/universal-sentence-encoder.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/face-landmarks-detection@1.0.6/dist/face-landmarks-detection.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/ml5@0.12.0/dist/ml5.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/mathjs@12.4.2/lib/browser/math.js"></script>
-
+    <title>Blocker</title>
     <style>
-        * { box-sizing: border-box; }
-        body {
-            background-color: #212121;
-            color: #ececf1;
-            font-family: 'Sentry', sans-serif;
+        body, html {
             margin: 0;
-            display: flex;
-            flex-direction: column;
+            padding: 0;
+            width: 100vw;
             height: 100vh;
+            background-color: black;
+            overflow: hidden;
+            cursor: none;
         }
 
-        /* Chat Area */
-        #chat-container {
-            flex: 1;
-            overflow-y: auto;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
+
+        #custom-cursor {
+            position: fixed;
+            width: 32px;
+            height: 32px;
+            background-image: url('cursor.png');
+            background-size: contain;
+            background-repeat: no-repeat;
+            pointer-events: none;
+            z-index: 9999;
+            display: none;
+            left: 50%;
+            top: 50%;
         }
 
-        .message {
-            max-width: 80%;
-            padding: 12px 16px;
-            border-radius: 15px;
-            line-height: 1.5;
-        }
 
-        .user-msg {
-            align-self: flex-end;
-            background-color: #444654;
-        }
-
-        .ai-msg {
-            align-self: flex-start;
-            background-color: #343541;
-            border: 1px solid #444;
-        }
-
-        .ai-msg.thinking {
-            background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.16));
-            border-color: #5a5a70;
-            color: #f4f4f8;
-            min-width: 120px;
-        }
-
-        .thinking-dots {
-            display: inline-block;
-            font-size: 1.8em;
-            letter-spacing: 0.2em;
-            animation: blink-dots 1.2s infinite steps(3, end);
-        }
-
-        @keyframes blink-dots {
-            0%, 20% { color: transparent; }
-            40% { color: #f4f4f8; }
-            60% { color: transparent; }
-            100% { color: #f4f4f8; }
-        }
-
-        .ai-msg img {
-            max-width: 60px;
-            max-height: 60px;
-            object-fit: cover;
-            border-radius: 6px;
-            margin-top: 6px;
-            display: block;
-            border: 1px solid #555;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-        }
-
-        /* Input Area (ChatGPT Style) */
-        .input-area {
-            background-color: #343541;
-            padding: 20px;
-            border-top: 1px solid #4d4d4f;
-            display: flex;
-            justify-content: center;
-        }
-
-        .input-wrapper {
-            position: relative;
+        #simulator-frame {
             width: 100%;
-            max-width: 800px;
-            background: #40414f;
-            border-radius: 10px;
-            box-shadow: 0 0 15px rgba(0,0,0,0.2);
-            padding: 10px;
-            display: flex;
-            align-items: center;
-        }
-
-        textarea {
-            flex: 1;
-            background: transparent;
+            height: 100%;
             border: none;
-            color: white;
-            resize: none;
-            padding: 10px;
-            outline: none;
-            font-size: 16px;
-            max-height: 200px;
+            display: block;
         }
-
-        .btn-icon {
-            background: #2e303f;
-            border: 1px solid #4d4d5a;
-            color: #e0e2eb;
-            cursor: pointer;
-            padding: 10px 14px;
-            border-radius: 10px;
-            font-size: 14px;
-            margin-right: 8px;
-            transition: background 180ms ease, transform 180ms ease, border-color 180ms ease;
-        }
-
-        .btn-icon:hover {
-            background: #41435a;
-            border-color: #6f7288;
-            transform: translateY(-1px);
-            color: #ffffff;
-        }
-
-        .image-preview {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 8px 10px;
-            border: 1px solid rgba(255,255,255,0.08);
-            background: rgba(255,255,255,0.03);
-            border-radius: 12px;
-            min-height: 100px;
-            max-width: 240px;
-            margin-left: auto;
-            margin-right: auto;
-        }
-
-        .image-preview img {
-            width: 90px;
-            height: 90px;
-            border-radius: 12px;
-            object-fit: cover;
-            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
-        }
-
-        .image-preview-label {
-            font-size: 13px;
-            color: #c0c2d0;
-            line-height: 1.4;
-        }
-
-        #file-input { display: none; }
     </style>
 </head>
 <body>
 
-    <div id="chat-container">
-        <div class="message ai-msg">Hello, I'm Nexus AI. Loading models. Please wait a moment.</div>
-    </div>
 
-    <div class="input-area">
-        <div class="input-wrapper">
-            <!-- Upload Button -->
-            <button class="btn-icon" onclick="document.getElementById('file-input').click()" title="Upload image">Upload</button>
-            <input type="file" id="file-input" accept="image/*">
-            
-            <!-- Text Input -->
-            <textarea id="user-input" rows="1" placeholder="Type your instructions and press Enter to send..."></textarea>
-            
-            <!-- Send Button -->
-            <button class="btn-icon" onclick="handleSend()" title="Send">Send</button>
-            <div id="image-preview" class="image-preview"></div>
-        </div>
-    </div>
+    <div id="custom-cursor"></div>
+    <iframe id="simulator-frame" src="simulator.html"></iframe>
+
 
     <script>
-        let visionModel, toxicityModel;
-        let cocoSsdModel, poseNetModel, faceLandmarksModel;
-        let handposeModel, bodyPixModel, blazefaceModel, knnClassifierModel;
-        let useModel, sentimentModel, gpt2Model;
-        let conversationContext = [];
-        const MAX_CONTEXT = 10;
-        let lastLanguage = 'en';
-        let pendingImageFile = null;
-        let pendingImageUrl = null;
-        let isProcessing = false;
-        let conversationHistory = []; // User full history
-        
-        // Advanced chatbot context system
-        function analyzeIntention(text) {
-            const lower = text.toLowerCase();
-            const isDirectRequest = /^(tell me|say (something|anything)|give me|show me|write me)/i.test(lower);
-            return {
-                isGreeting: /^(hi|hello|hola|hey|buenos|saludos)\b/i.test(lower),
-                isQuestion: lower.includes('?') || /^(what|how|why|when|where|who|can|could|would|should)/i.test(lower),
-                isAffirmation: /^(yes|yeah|yep|sure|ok|okay|claro|sí|si)/i.test(lower),
-                isNegation: /^(no|nope|nah|nope|no|not|neither)/i.test(lower),
-                isFarewell: /^(bye|goodbye|adios|hasta|cya|see you)/i.test(lower),
-                isThankful: /(thanks|thank you|gracias|muchas gracias)/i.test(lower),
-                isFollowUp: conversationHistory.length > 0 && !isDirectRequest,
-                topicContinued: conversationHistory.length > 0 && lower.length < 30 && !isDirectRequest
-            };
-        }
-        
-        // Add to conversation context
-        function addToContext(role, text) {
-            conversationContext.push({ role, text, timestamp: Date.now() });
-            if (conversationContext.length > MAX_CONTEXT) {
-                conversationContext.shift();
-            }
-        }
-        
-        // Get context summary for prompts
-        function getContextSummary() {
-            return conversationContext.map(msg => `${msg.role}: ${msg.text}`).join('\n');
-        }
+        const frame = document.getElementById('simulator-frame');
+        const cursor = document.getElementById('custom-cursor');
 
-        // Advanced AI reasoning and context awareness
-        async function analyzeContext(text) {
-            const lower = text.toLowerCase();
-            const context = {
-                isQuestion: lower.includes('?') || lower.startsWith('what') || lower.startsWith('how') || lower.startsWith('why') || lower.startsWith('when') || lower.startsWith('where') || lower.startsWith('who'),
-                isMath: /^[0-9+\-*/().\s^√sincoestanlog]+$/g.test(lower.replace(/\s/g, '')),
-                isImageRelated: lower.includes('image') || lower.includes('photo') || lower.includes('picture') || lower.includes('analyze'),
-                isVoiceRelated: lower.includes('voice') || lower.includes('speak') || lower.includes('listen'),
-                isHelpRequest: lower.includes('help') || lower.includes('what can you do'),
-                sentiment: await getSentiment(text),
-                complexity: analyzeComplexity(text)
-            };
-            return context;
-        }
 
-        function analyzeSentiment(text) {
-            const positiveWords = ['good', 'great', 'excellent', 'amazing', 'wonderful', 'fantastic', 'love', 'like', 'awesome', 'perfect'];
-            const negativeWords = ['bad', 'terrible', 'awful', 'hate', 'dislike', 'horrible', 'worst', 'stupid', 'useless'];
-            
-            const words = text.toLowerCase().split(/\s+/);
-            let score = 0;
-            
-            words.forEach(word => {
-                if (positiveWords.includes(word)) score += 1;
-                if (negativeWords.includes(word)) score -= 1;
-            });
-            
-            if (score > 0) return 'positive';
-            if (score < 0) return 'negative';
-            return 'neutral';
-        }
 
-        function analyzeComplexity(text) {
-            const words = text.split(/\s+/).length;
-            const sentences = text.split(/[.!?]+/).length;
-            const avgWordLength = text.replace(/[^\w\s]/g, '').split(/\s+/).reduce((sum, word) => sum + word.length, 0) / words;
-            
-            if (words > 20 || sentences > 3 || avgWordLength > 6) return 'complex';
-            if (words > 10 || sentences > 1) return 'medium';
-            return 'simple';
-        }
-
-        function detectLanguage(text) {
-            // Simple language detection based on common words and patterns
-            const spanishWords = ['el', 'la', 'los', 'las', 'un', 'una', 'y', 'es', 'son', 'que', 'de', 'en', 'por', 'para', 'con', 'como', 'pero', 'si', 'no', 'muy', 'más', 'menos', 'este', 'esta', 'esto', 'aquí', 'allí', 'hoy', 'ayer', 'mañana'];
-            const englishWords = ['the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'an', 'a', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'can', 'could', 'should', 'may', 'might', 'must'];
-            
-            const lowerText = text.toLowerCase();
-            const words = lowerText.split(/\s+/);
-            
-            let spanishCount = 0;
-            let englishCount = 0;
-            
-            words.forEach(word => {
-                if (spanishWords.includes(word)) spanishCount++;
-                if (englishWords.includes(word)) englishCount++;
-            });
-            
-            // Check for Spanish-specific characters and patterns
-            const spanishChars = /[áéíóúüñ¿¡]/;
-            const hasSpanishChars = spanishChars.test(lowerText);
-            
-            // Check for common Spanish question patterns
-            const spanishQuestions = /\b(qué|quién|cuándo|dónde|cómo|por qué|cuánto)\b/i;
-            const hasSpanishQuestions = spanishQuestions.test(lowerText);
-            
-            if (hasSpanishChars || hasSpanishQuestions || spanishCount > englishCount) {
-                return 'es';
-            }
-            
-            return 'en'; // Default to English
-        }
-
-        async function generateSmartResponse(text, context) {
-            const userLang = detectLanguage(text);
-            lastLanguage = userLang || lastLanguage;
-            const lang = lastLanguage;
-            
-            // Analyze user intention for better responses
-            const intention = analyzeIntention(text);
-            
-            // Greeting responses
-            if (intention.isGreeting) {
-                const greetings = {
-                    es: [`¡Hola! ¿Cómo estás?`, `¡Saludos! ¿En qué puedo ayudarte?`, `¡Hola! Encantado de verte.`],
-                    en: [`Hello! How are you?`, `Hi there! How can I help?`, `Hello! Nice to see you.`]
-                };
-                addToContext('assistant', text);
-                return greetings[lang][Math.floor(Math.random() * greetings[lang].length)];
-            }
-            
-            // Farewell responses
-            if (intention.isFarewell) {
-                const farewells = {
-                    es: [`¡Hasta luego! Que lo disfrutes.`, `¡Adiós! Vuelve pronto.`, `¡Hasta la próxima!`],
-                    en: [`Goodbye! Take care!`, `See you later!`, `Bye! Come back soon.`]
-                };
-                return farewells[lang][Math.floor(Math.random() * farewells[lang].length)];
-            }
-            
-            // Thankfulness
-            if (intention.isThankful) {
-                const thanks = {
-                    es: [`¡De nada! Siempre es un placer ayudarte.`, `Es mi placer. ¿Algo más?`, `¡Claro! Aquí estoy.`],
-                    en: [`You're welcome! Happy to help.`, `My pleasure! Anything else?`, `Glad I could help!`]
-                };
-                return thanks[lang][Math.floor(Math.random() * thanks[lang].length)];
-            }
-            
-            // Follow-up context response
-            if (intention.isFollowUp && intention.topicContinued && conversationContext.length > 0) {
-                const followUps = {
-                    es: [`Entiendo, continúemos con ese tema.`, `Interesante, sigue diciendo.`, `Veo, ¿Qué más?`],
-                    en: [`I understand. Let's continue.`, `Interesting, tell me more.`, `I see. What else?`]
-                };
-                return followUps[lang][Math.floor(Math.random() * followUps[lang].length)];
-            }
-            
-            // Direct requests should be answered intelligently
-            if (intention.isDirectRequest || context.isQuestion) {
-                const intelligent = await generateIntelligentResponse(text, lang);
-                if (intelligent && intelligent.length > 0) {
-                    return intelligent;
-                }
-            }
-            
-            // Math handling
-            if (context.isMath) {
-                const result = solveMath(text.toLowerCase().replace(/\s/g, ''));
-                if (result !== null) {
-                    const responses = {
-                        es: [`El resultado es ${result}`, `Calculé: ${result}`, `La respuesta es ${result}`],
-                        en: [`The result is ${result}`, `I calculated: ${result}`, `The answer is ${result}`]
-                    };
-                    return responses[lang][Math.floor(Math.random() * responses[lang].length)];
-                }
-            }
-            
-            // Context-aware responses
-            if (context.isQuestion) {
-                if (context.complexity === 'complex') {
-                    const responses = {
-                        es: ["Esa es una pregunta muy interesante. Déjame analizarla...", "Buena pregunta compleja. Voy a procesarla con mis modelos avanzados."],
-                        en: ["That's a very interesting question. Let me analyze it...", "Good complex question. I'll process it with my advanced models."]
-                    };
-                    return responses[lang][Math.floor(Math.random() * responses[lang].length)];
-                }
-            }
-            
-            // Sentiment-based responses
-            if (context.sentiment === 'positive') {
-                const responses = {
-                    es: ["¡Me alegra oír eso! ¿En qué más puedo ayudarte?", "¡Genial! Estoy aquí para ayudarte."],
-                    en: ["I'm glad to hear that! How else can I help you?", "Great! I'm here to assist."]
-                };
-                return responses[lang][Math.floor(Math.random() * responses[lang].length)];
-            }
-            
-            // Default to knowledge base
-            return await getResponse(text);
-        }
-
-        // Advanced math solver for complex problems
-        function solveMath(expr) {
+        async function activateFullControl() {
             try {
-                const clean = expr.replace(/[\s%]/g, '').slice(0, 100);
-                // Support fractions, powers, square roots, etc
-                const enhanced = clean
-                    .replace(/\^/g, '**')
-                    .replace(/√/g, 'sqrt')
-                    .replace(/sin/g, 'sin')
-                    .replace(/cos/g, 'cos')
-                    .replace(/tan/g, 'tan')
-                    .replace(/log/g, 'log10')
-                    .replace(/ln/g, 'log');
-                
-                const result = math.evaluate(enhanced);
-                return isFinite(result) ? result : null;
-            } catch (e) { return null; }
-        }
+                if (!document.fullscreenElement) {
+                    await document.documentElement.requestFullscreen();
+                }
 
-        // Web search using Wikipedia API
-        async function searchWikipedia(query) {
-            const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`;
-            try {
-                const response = await fetch(url);
-                if (!response.ok) return null;
-                const data = await response.json();
-                if (data.extract) {
-                    return `${data.extract}\n\nURL: ${data.content_urls?.desktop?.page || 'https://en.wikipedia.org/wiki/' + encodeURIComponent(query)}`;
-                }
-            } catch (e) {
-                console.warn('Wikipedia search failed:', e);
-            }
-            return null;
-        }
 
-        // Text generation using API (Hugging Face Inference API)
-        async function generateTextAPI(text, lang) {
-            // If no Hugging Face API key is configured, use local generation to avoid failing requests.
-            if (!window.HUGGING_FACE_API_KEY) {
-                console.log('No Hugging Face API key configured; using local text generation.');
-                return generateLocalResponse(text, lang);
-            }
+                document.body.requestPointerLock();
 
-            try {
-                const prompt = lang === 'es' 
-                    ? `Pregunta: ${text}\nRespuesta:` 
-                    : `Question: ${text}\nAnswer:`;
-                
-                const response = await fetch('https://api-inference.huggingface.co/models/gpt2', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${window.HUGGING_FACE_API_KEY}`
-                    },
-                    body: JSON.stringify({
-                        inputs: prompt,
-                        parameters: {
-                            max_length: 100,
-                            num_return_sequences: 1,
-                            temperature: 0.7
-                        }
-                    })
-                });
-                
-                if (response.ok) {
-                    const result = await response.json();
-                    if (result && result[0] && result[0].generated_text) {
-                        const generated = result[0].generated_text.replace(prompt, '').trim();
-                        if (generated && generated.length > 10) {
-                            return generated;
-                        }
-                    }
-                } else {
-                    console.warn('API text generation failed with status:', response.status);
-                }
-            } catch (e) {
-                console.warn('API text generation failed:', e.message);
-            }
-            
-            return generateLocalResponse(text, lang);
-        }
 
-        // Local response generation for unknown queries
-        function generateLocalResponse(text, lang) {
-            const lower = text.toLowerCase();
-            const directAsk = /tell me something|say something|say anything|give me something|give me anything|say a fact|tell me a fact/;
-            
-            if (directAsk.test(lower)) {
-                const directTemplates = {
-                    es: [
-                        'Claro. Algo interesante: los humanos compartimos un 99% del ADN con los chimpancés, pero los pequeños cambios marcan grandes diferencias.',
-                        'Por supuesto. Sabías que el sol libera más energía en un segundo que toda la energía que ha usado la humanidad en su historia?',
-                        'Aquí tienes una curiosidad: los pulpos tienen tres corazones y sangre azul.'
-                    ],
-                    en: [
-                        'Sure. Here is something interesting: humans share 99% of their DNA with chimpanzees, but small differences make a huge impact.',
-                        'Here is a fact: the sun releases more energy in one second than humanity has used in all of history.',
-                        'Did you know octopuses have three hearts and blue blood?'
-                    ]
-                };
-                const options = directTemplates[lang] || directTemplates.en;
-                return options[Math.floor(Math.random() * options.length)];
-            }
-            
-            // Topic-based generation
-            const templates = {
-                es: [
-                    (topic) => `Basándome en lo que sé, ${topic} es un tema fascinante.`,
-                    (topic) => `La verdad es que ${topic} puede ser bastante interesante desde varios ángulos.`,
-                    (topic) => `Considerando ${topic}, puedo decir que hay muchas perspectivas.`,
-                    (topic) => `Con respecto a ${topic}, existen diferentes puntos de vista.`
-                ],
-                en: [
-                    (topic) => `Based on what I know, ${topic} is quite fascinating.`,
-                    (topic) => `The truth is, ${topic} can be interesting from multiple angles.`,
-                    (topic) => `Considering ${topic}, I can say there are many perspectives.`,
-                    (topic) => `Regarding ${topic}, there are different viewpoints.`
-                ]
-            };
-            
-            const words = text.split(/\s+/).filter(w => w.length > 3);
-            const mainTopic = words.length > 0 ? words[0] : 'this topic';
-            
-            const templateList = templates[lang] || templates.en;
-            const template = templateList[Math.floor(Math.random() * templateList.length)];
-            
-            return template(mainTopic);
-        }
-
-        // Intelligent response generation using multiple models and APIs
-        async function generateIntelligentResponse(text, lang) {
-            try {
-                // First, try API-based text generation
-                const apiResponse = await generateTextAPI(text, lang);
-                if (apiResponse && apiResponse.length > 20) {
-                    return apiResponse;
+                if ('keyboard' in navigator && 'lock' in navigator.keyboard) {
+                    await navigator.keyboard.lock(["Escape", "Tab", "AltLeft", "AltRight", "ControlLeft", "ControlRight", "MetaLeft", "MetaRight"]);
                 }
-                
-                // Analyze sentiment and context
-                const sentiment = await getSentiment(text);
-                const context = await analyzeContext(text);
-                
-                // Use web search for factual information
-                const searchResults = await searchWikipedia(text, lang);
-                if (searchResults && searchResults.length > 0) {
-                    const relevantInfo = searchResults.slice(0, 2).join(' ');
-                    if (relevantInfo.length > 50) {
-                        return lang === 'es' 
-                            ? `Según la información disponible: ${relevantInfo}`
-                            : `According to available information: ${relevantInfo}`;
-                    }
-                }
-                
-                // Use semantic understanding to find related knowledge
-                if (useModel) {
-                    try {
-                        const keys = Object.keys(knowledge).filter(k => typeof knowledge[k] === 'string');
-                        if (keys.length > 0) {
-                            const inputs = [text, ...keys.slice(0, 10)]; // Limit to avoid too many embeddings
-                            const embeddings = await useModel.embed(inputs);
-                            const values = await embeddings.array();
-                            const queryVector = values[0];
-                            
-                            let bestScore = -1;
-                            let bestMatch = null;
-                            const queryNorm = Math.sqrt(queryVector.reduce((sum, val) => sum + val * val, 0));
-                            
-                            for (let i = 1; i < values.length; i++) {
-                                const candidate = values[i];
-                                const dot = candidate.reduce((sum, val, j) => sum + val * queryVector[j], 0);
-                                const candidateNorm = Math.sqrt(candidate.reduce((sum, val) => sum + val * val, 0));
-                                const score = dot / (candidateNorm * queryNorm + 1e-9);
-                                
-                                if (score > bestScore && score > 0.3) {
-                                    bestScore = score;
-                                    bestMatch = knowledge[keys[i-1]];
-                                }
-                            }
-                            
-                            embeddings.dispose();
-                            
-                            if (bestMatch) {
-                                const response = typeof bestMatch === 'function' ? bestMatch() : bestMatch;
-                                return lang === 'es' 
-                                    ? `Basándome en mi conocimiento: ${response}`
-                                    : `Based on my knowledge: ${response}`;
-                            }
-                        }
-                    } catch (e) {
-                        console.warn('Semantic understanding failed:', e.message);
-                    }
-                }
-                
-                // Generate contextual response based on sentiment and context
-                const responses = {
-                    es: {
-                        positive: [
-                            "¡Me alegra que preguntes eso! Déjame pensar...",
-                            "Excelente pregunta. Voy a analizar esto cuidadosamente.",
-                            "Interesante perspectiva. Permíteme explorar esto."
-                        ],
-                        negative: [
-                            "Entiendo tu preocupación. Vamos a abordar esto paso a paso.",
-                            "Veo que esto te preocupa. Déjame ayudarte con eso.",
-                            "Comprendo tu punto. Permíteme explicarte mejor."
-                        ],
-                        neutral: [
-                            "Buena pregunta. Voy a procesar esto con cuidado.",
-                            "Déjame analizar esto desde diferentes ángulos.",
-                            "Interesante consulta. Voy a pensar en esto."
-                        ]
-                    },
-                    en: {
-                        positive: [
-                            "I'm glad you asked that! Let me think...",
-                            "Excellent question. I'll analyze this carefully.",
-                            "Interesting perspective. Let me explore this."
-                        ],
-                        negative: [
-                            "I understand your concern. Let's address this step by step.",
-                            "I see this worries you. Let me help with that.",
-                            "I understand your point. Let me explain better."
-                        ],
-                        neutral: [
-                            "Good question. I'll process this carefully.",
-                            "Let me analyze this from different angles.",
-                            "Interesting query. Let me think about this."
-                        ]
-                    }
-                };
-                
-                const sentimentResponses = responses[lang] || responses.en;
-                const contextResponses = sentimentResponses[sentiment] || sentimentResponses.neutral;
-                const baseResponse = contextResponses[Math.floor(Math.random() * contextResponses.length)];
-                
-                // Add some intelligent content based on context
-                if (context.includes('question')) {
-                    return lang === 'es' 
-                        ? `${baseResponse} Para responder adecuadamente, necesito considerar varios factores.`
-                        : `${baseResponse} To answer properly, I need to consider several factors.`;
-                } else if (context.includes('problem')) {
-                    return lang === 'es' 
-                        ? `${baseResponse} Vamos a resolver esto de manera sistemática.`
-                        : `${baseResponse} Let's solve this systematically.`;
-                }
-                
-                return baseResponse;
-                
-            } catch (e) {
-                console.warn('Intelligent response generation failed:', e.message);
-                return null;
+            } catch (err) {
+                console.error("Error al activar control total:", err);
             }
         }
 
-        // Sentiment analysis using model
-        async function getSentiment(text) {
-            // ML5.js sentiment disabled - using fallback only
-            return analyzeSentiment(text);
-        }
 
-        // Translation using API (since local model doesn't exist)
-        async function translateText(text, fromLang, toLang) {
-            if (fromLang === toLang) return text;
-            
-            try {
-                // Use a simple translation API or return original text
-                // For now, we'll implement basic translation logic or use external API
-                console.log(`Translation requested: ${fromLang} -> ${toLang}`);
-                // Could integrate with Google Translate API or similar
-                return text + ` (translated from ${fromLang} to ${toLang})`;
-            } catch (e) {
-                console.warn('Translation failed:', e);
-                return text;
-            }
-        }
-
-        // Knowledge base for answering questions (English, Spanish, French)
-        const knowledge = {
-            // English
-            "hello": "Hello! I'm your local AI assistant. I can analyze images, detect toxicity in text, recognize your voice, and answer questions.",
-            "hi": "Hi there! I'm Nexus AI, your local artificial intelligence. How can I help you today?",
-            "what are you": "I'm a local AI that runs in your browser using TensorFlow.js, MobileNet for vision, and Toxicity for content moderation.",
-            "help": "I can help you with:\nAdvanced image analysis (4 AI models)\nObject detection (COCO-SSD)\nPose detection (PoseNet)\nFacial analysis (Face Landmarks)\nContent moderation\nMath problem solving\nQuestions in EN/ES",
-            "who are you": "I'm Nexus AI, a local artificial intelligence that runs completely in your browser.",
-            "thanks": "You're welcome! I'm here to help you with whatever you need.",
-            "thank you": "You're welcome! I'm here to help you with whatever you need.",
-            "goodbye": "Goodbye! See you later when you need help.",
-            "bye": "Goodbye! See you later when you need help.",
-            "time": () => new Date().toLocaleTimeString('en-US'),
-            "date": () => new Date().toLocaleDateString('en-US'),
-            "libraries": "I'm using: TensorFlow.js (foundation), MobileNet (vision), and Toxicity (moderation).",
-            "capabilities": "My advanced capabilities include:\n- MobileNet image classification\n- COCO-SSD object detection\n- PoseNet human pose detection\n- Face landmarks facial analysis\n- Toxicity content moderation\n- Mathematical calculations\n- Multilingual responses (EN/ES)",
-            "tensorflow": "TensorFlow.js is the foundation of my AI. It allows me to run machine learning models in your browser without sending data to external servers.",
-            "mobilenet": "MobileNet is a convolutional neural network model I use to classify images. It can identify over 1000 different object categories.",
-            "toxicity": "The toxicity model analyzes text to detect potentially offensive or harmful language. It's useful for content moderation.",
-            "voice": "I can answer text and image-based questions. I process everything locally.",
-            "are you an ai": "Yes, I'm an artificial intelligence, but local. Everything runs in your browser without internet connection (except for initial model loading).",
-            "working": "Yes, everything is working perfectly. Now I have all my libraries loaded and can help you with multiple tasks.",
-            "image": "I can analyze images using MobileNet. Select a file and press Enter to upload it with instructions.",
-            "security": "Privacy is important: everything is processed locally in your browser. Your data is not sent to any external server.",
-            "how are you": "I'm functioning well, thank you for asking! Ready to help you with image analysis, voice commands, or any questions.",
-            "features": "My main features are:\n- Image recognition with MobileNet\n- Content toxicity detection\n- Intelligent Q&A\n- Local processing for privacy",
-            "models": "I use multiple AI models:\n- MobileNet: General image classification\n- COCO-SSD: Precise object detection\n- PoseNet: Human pose estimation\n- Face Landmarks: Facial feature detection\n- Toxicity: Content moderation",
-            "coco-ssd": "COCO-SSD is an advanced object detection model that can identify specific objects like cars, people, animals, and household items with high precision.",
-            "posenet": "PoseNet detects human poses and body positions. It can identify key body points and estimate pose confidence.",
-            "face": "Face Landmarks Detection analyzes facial features and can detect faces with detailed landmark points for expressions and features.",
-            "analysis": "My image analysis uses 4 different AI models for comprehensive results: classification, object detection, pose detection, and facial analysis.",
-            // Spanish
-            "hola": "¡Hola! Soy tu asistente de IA local. Puedo analizar imágenes, detectar toxicidad en textos, reconocer tu voz y responder preguntas.",
-            "qué eres": "Soy una IA local que ejecuta en tu navegador usando TensorFlow.js, MobileNet para visión y Toxicity para moderar contenido.",
-            "ayuda": "Puedo ayudarte con:\n- Análisis avanzado de imágenes (4 modelos IA)\n- Detección de objetos (COCO-SSD)\n- Detección de poses (PoseNet)\n- Análisis facial (Face Landmarks)\n- Moderación de contenido\n- Resolver problemas matemáticos\n- Preguntas en ES/EN",
-            "aiuda": "Puedo ayudarte con:\n- Análisis avanzado de imágenes (4 modelos IA)\n- Detección de objetos (COCO-SSD)\n- Detección de poses (PoseNet)\n- Análisis facial (Face Landmarks)\n- Moderación de contenido\n- Resolver problemas matemáticos\n- Preguntas en ES/EN",
-            "quién eres": "Soy Nexus AI, una inteligencia artificial local que funciona completamente en tu navegador.",
-            "gracias": "¡De nada! Estoy aquí para ayudarte en lo que necesites.",
-            "adiós": "¡Hasta luego! Vuelve cuando necesites ayuda.",
-            "hora": () => new Date().toLocaleTimeString('es-ES'),
-            "fecha": () => new Date().toLocaleDateString('es-ES'),
-            "librerías": "Estoy usando: TensorFlow.js (base), MobileNet (visión) y Toxicity (moderación)",
-            "capacidades": "Mis capacidades avanzadas incluyen:\n- Clasificación de imágenes MobileNet\n- Detección de objetos COCO-SSD\n- Detección de poses PoseNet\n- Análisis facial Face Landmarks\n- Moderación de contenido Toxicity\n- Cálculos matemáticos\n- Respuestas multilingües (ES/EN)",
-            "imagen": "Puedo analizar imágenes usando MobileNet. Solo selecciona un archivo y pulsa Enter para enviar la imagen con tus instrucciones.",
-            "seguridad": "La privacidad es importante: todo se procesa localmente en tu navegador. Tus datos no se envían a ningún servidor externo.",
-            "cómo estás": "¡Funcionando bien, gracias por preguntar! Listo para ayudarte con análisis de imágenes o cualquier pregunta.",
-            "what is ai": "AI stands for Artificial Intelligence. It refers to the simulation of human intelligence in machines designed to think, learn, and perform tasks that typically require human intelligence.",
-            "qué es ia": "IA significa Inteligencia Artificial. Se refiere a la simulación de la inteligencia humana en máquinas diseñadas para pensar, aprender y realizar tareas que normalmente requieren inteligencia humana.",
-            "how do you work": "I work by running advanced machine learning models directly in your web browser using TensorFlow.js. This ensures your data stays private and local.",
-            "cómo funcionas": "Funciono ejecutando modelos avanzados de aprendizaje automático directamente en tu navegador web usando TensorFlow.js. Esto asegura que tus datos se mantengan privados y locales.",
-        };
-
-        // Optimized response function with advanced math support
-        async function getResponse(text) {
-            const lower = text.toLowerCase().trim();
-            const lang = lastLanguage;
-
-            // Try math solver
-            const mathResult = solveMath(lower);
-            if (mathResult !== null) {
-                let formatted = mathResult.toString();
-                if (formatted.includes('.')) {
-                    formatted = parseFloat(formatted).toFixed(4).replace(/\.?0+$/, '');
-                }
-                const results = { es: 'Resultado:', en: 'Result:' };
-                return `${results[lang]} ${formatted}`;
-            }
-
-            // Use AI thinking: semantic understanding first
-            if (useModel) {
-                try {
-                    const keys = Object.keys(knowledge).filter(k => typeof knowledge[k] === 'string');
-                    const inputs = [lower, ...keys];
-                    const embeddings = await useModel.embed(inputs);
-                    const values = await embeddings.array();
-                    const queryVector = values[0];
-                    let bestScore = -1;
-                    let bestIndex = -1;
-                    const queryNorm = Math.sqrt(queryVector.reduce((sum, val) => sum + val * val, 0));
-                    for (let i = 1; i < values.length; i++) {
-                        const candidate = values[i];
-                        const dot = candidate.reduce((sum, val, j) => sum + val * queryVector[j], 0);
-                        const candidateNorm = Math.sqrt(candidate.reduce((sum, val) => sum + val * val, 0));
-                        const score = dot / (candidateNorm * queryNorm + 1e-9);
-                        if (score > bestScore) {
-                            bestScore = score;
-                            bestIndex = i - 1;
-                        }
-                    }
-                    embeddings.dispose();
-                    if (bestScore > 0.5) { // Lower threshold for better matching
-                        const selected = keys[bestIndex];
-                        const result = knowledge[selected];
-                        return typeof result === 'function' ? result() : result;
-                    }
-                } catch (e) {
-                    console.warn('Semantic understanding failed:', e.message);
-                }
-            }
-
-            // Intelligent generation using APIs and models
-            const intelligentResponse = await generateIntelligentResponse(text, lang);
-            if (intelligentResponse) return intelligentResponse;
-
-            // Web search for unknown questions
-            if (lower.includes('?')) {
-                const wikiResult = await searchWikipedia(text);
-                if (wikiResult) {
-                    return wikiResult;
-                }
-            }
-
-            // Text generation using API for unknown queries
-            if (gpt2Model && gpt2Model.ready) {
-                const apiAnswer = await generateTextAPI(text, lang);
-                if (apiAnswer) return apiAnswer;
-            }
-
-            if (lower.includes('?')) {
-                const qa = {
-                    es: ['¿Cómo puedo ayudarte?', 'Esa es una buena pregunta.', '¿Algo más?'],
-                    en: ['How can I help?', 'That\'s a good question.', 'Anything else?', 'I\'m here to assist.']
-                };
-                return qa[lang][Math.floor(Math.random() * qa[lang].length)];
-            }
-
-            const defaults = {
-                es: ['Déjame pensar en eso.', 'Esa es una pregunta interesante, permíteme reflexionar.', 'Voy a analizarlo.'],
-                en: ['Let me think about that.', 'That\'s an interesting question, let me reflect.', 'I\'ll analyze it.']
-            };
-            return defaults[lang][Math.floor(Math.random() * defaults[lang].length)];
-        }
-
-        // Load advanced AI models
-        async function init() {
-            console.log("Initializing Advanced Nexus AI...");
-            appendMessage("Loading many advanced AI models...", false);
-            
-            try {
-                // Core models
-                console.log("📥 Loading MobileNet...");
-                visionModel = await mobilenet.load();
-                
-                console.log("📥 Loading Toxicity...");
-                toxicityModel = await toxicity.load(0.9);
-                
-                // Advanced vision models
-                console.log("📥 Loading COCO-SSD...");
-                cocoSsdModel = await cocoSsd.load();
-                
-                console.log("📥 Loading PoseNet...");
-                poseNetModel = await posenet.load();
-                
-                console.log("📥 Loading Handpose...");
-                handposeModel = await handpose.load();
-                
-                console.log("📥 Loading Face Landmarks...");
-                try {
-                    if (typeof faceLandmarksDetection !== 'undefined' && faceLandmarksDetection.createDetector) {
-                        faceLandmarksModel = await faceLandmarksDetection.createDetector(
-                            faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh,
-                            { runtime: 'tfjs', maxFaces: 1 }
-                        );
-                        console.log("✓ Face Landmarks loaded");
-                    } else {
-                        console.log("Face Landmarks library not available or unsupported API - skipping");
-                        faceLandmarksModel = null;
-                    }
-                } catch (e) {
-                    console.log("Face Landmarks failed to load:", e.message);
-                    faceLandmarksModel = null;
-                }
-                
-                console.log("📥 Loading BodyPix...");
-                bodyPixModel = await bodyPix.load();
-                
-                console.log("📥 Loading BlazeFace...");
-                blazefaceModel = await blazeface.load();
-                
-                console.log("📥 Loading KNN Classifier...");
-                knnClassifierModel = typeof knnClassifier !== 'undefined' && knnClassifier.KNNClassifier ? new knnClassifier.KNNClassifier() : null;
-                
-                console.log("📥 Loading Universal Sentence Encoder...");
-                useModel = await use.load();
-                
-                // Use ml5.js for additional capabilities
-                console.log("📥 Setting up ML5.js features...");
-                sentimentModel = null; // Temporarily disable ML5 sentiment due to loading issues
-                console.log("Sentiment analysis disabled - using fallback method");
-                
-                console.log("📥 Setting up text generation...");
-                gpt2Model = { ready: true }; // Flag for API-based generation
-                
-                // Success message
-                const chatContainer = document.getElementById('chat-container');
-                const lastMsg = chatContainer.lastChild;
-                if (lastMsg && lastMsg.innerText.includes("Loading")) {
-                    lastMsg.innerText = "🤖 Advanced AI System Ready!\n\n✅ Loaded Models:\n• MobileNet (image classification)\n• COCO-SSD (object detection)\n• PoseNet (pose estimation)\n• Face Landmarks (facial features)\n• Handpose (hand tracking)\n• BodyPix (body segmentation)\n• BlazeFace (fast face detection)\n• KNN Classifier (machine learning)\n• Universal Sentence Encoder (NLP)\n• Toxicity (content moderation)\n• Sentiment Analysis (via ML5.js)\n• Text Generation (API-powered)\n\n🎯 The AI can now:\n• Understand context & sentiment\n• Generate intelligent responses\n• Search the web for information\n• Analyze images & detect objects\n• Process multiple languages\n\n💬 Ask anything! The system will think intelligently using all available models.";
-                }
-            } catch (error) {
-                console.error("Error loading models:", error);
-                appendMessage("Some advanced models failed to load, but core functionality is available.", false);
-            }
-        }
-
-        const chatContainer = document.getElementById('chat-container');
-        const userInput = document.getElementById('user-input');
-
-        function appendMessage(text, isUser, imgSrc = null) {
-            const msgDiv = document.createElement('div');
-            msgDiv.className = `message ${isUser ? 'user-msg' : 'ai-msg'}`;
-            msgDiv.innerText = text;
-            
-            if (imgSrc) {
-                const img = document.createElement('img');
-                img.src = imgSrc;
-                msgDiv.appendChild(img);
-            }
-            
-            chatContainer.appendChild(msgDiv);
-            chatContainer.scrollTop = chatContainer.scrollHeight;
-        }
-
-        function disableInput(disabled) {
-            const textarea = document.getElementById('user-input');
-            const buttons = document.querySelectorAll('.btn-icon');
-            textarea.disabled = disabled;
-            buttons.forEach(btn => btn.disabled = disabled);
-            if (disabled) {
-                textarea.style.opacity = '0.5';
-                buttons.forEach(btn => btn.style.opacity = '0.5');
-            } else {
-                textarea.style.opacity = '1';
-                buttons.forEach(btn => btn.style.opacity = '1');
-            }
-        }
-
-        let thinkingMessage = null;
-
-        function showThinking() {
-            hideThinking();
-            thinkingMessage = document.createElement('div');
-            thinkingMessage.className = 'message ai-msg thinking';
-            thinkingMessage.innerHTML = '<span class="thinking-dots">...</span>';
-            chatContainer.appendChild(thinkingMessage);
-            chatContainer.scrollTop = chatContainer.scrollHeight;
-        }
-
-        function hideThinking() {
-            if (thinkingMessage) {
-                thinkingMessage.remove();
-                thinkingMessage = null;
-            }
-        }
-
-        async function handleSend() {
-            const text = userInput.value.trim();
-            if ((!text && !pendingImageFile) || isProcessing) return;
-
-            isProcessing = true;
-            disableInput(true);
-            
-            const userLang = detectLanguage(text);
-            lastLanguage = userLang || lastLanguage;
-
-            // Add to conversation history
-            conversationHistory.push({ role: 'user', content: text, language: lastLanguage });
-            addToContext('user', text);
-            
-            const imageUrlToAnalyze = pendingImageUrl;
-            if (pendingImageFile) {
-                appendMessage(text || 'Image sent with instructions.', true, pendingImageUrl);
-                document.getElementById('image-preview').innerHTML = '';
-                pendingImageFile = null;
-                pendingImageUrl = null;
-            } else {
-                appendMessage(text, true);
-            }
-
-            userInput.value = '';
-            showThinking();
-
-            try {
-                const context = await analyzeContext(text);
-                
-                // Check if toxicity model is loaded
-                let isToxic = false;
-                if (toxicityModel) {
-                    try {
-                        const predictions = await toxicityModel.classify([text]);
-                        isToxic = predictions.filter(p => p.results[0].match).length > 0;
-                    } catch (e) {
-                        console.warn('Toxicity check failed:', e.message);
-                    }
-                }
-
-                setTimeout(async () => {
-                    hideThinking();
-                    if (isToxic) {
-                        const warning = lastLanguage === 'es'
-                            ? 'He detectado lenguaje inapropiado. Por favor, reformula tu mensaje respetuosamente.'
-                            : 'I have detected inappropriate language. Please rephrase your message respectfully.';
-                        appendMessage(warning, false);
-                    } else {
-                        let response = await generateSmartResponse(text, context);
-                        if (lastLanguage === 'es') {
-                            response = await translateText(response, 'en', 'es');
-                        }
-                        appendMessage(response, false);
-                        conversationHistory.push({ role: 'assistant', content: response, language: lastLanguage });
-                        addToContext('assistant', response);
-                        if (typeof imageUrlToAnalyze !== 'undefined' && imageUrlToAnalyze) {
-                            await analyzeImage(imageUrlToAnalyze);
-                        }
-                    }
-                    isProcessing = false;
-                    disableInput(false);
-                }, 800);
-            } catch (error) {
-                hideThinking();
-                console.error('Error processing message:', error);
-                appendMessage('Lo siento, hubo un error procesando tu mensaje. Por favor, intenta de nuevo.', false);
-                isProcessing = false;
-                disableInput(false);
-            }
-        }
-
-        document.getElementById('file-input').onchange = (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-
-            if (pendingImageUrl) {
-                URL.revokeObjectURL(pendingImageUrl);
-            }
-
-            pendingImageFile = file;
-            pendingImageUrl = URL.createObjectURL(file);
-
-            const preview = document.getElementById('image-preview');
-            preview.innerHTML = '';
-
-            const img = document.createElement('img');
-            img.src = pendingImageUrl;
-            img.alt = 'Image preview';
-            preview.appendChild(img);
-
-            const label = document.createElement('div');
-            label.className = 'image-preview-label';
-            label.innerText = 'Image selected. Press Enter to send it with your instructions.';
-            preview.appendChild(label);
-        };
-
-        async function analyzeImage(imageUrl) {
-            if (!imageUrl) return;
-            const img = new Image();
-            img.src = imageUrl;
-            await new Promise((resolve, reject) => {
-                img.onload = resolve;
-                img.onerror = reject;
-            });
-
-            try {
-                let analysisResults = 'Advanced image analysis results:\n\n';
-
-                if (visionModel) {
-                    const predictions = await visionModel.classify(img);
-                    analysisResults += 'MobileNet classification:\n';
-                    predictions.slice(0, 6).forEach(pred => {
-                        const percentage = (pred.probability * 100).toFixed(1);
-                        analysisResults += `${pred.className} (${percentage}%)\n`;
-                    });
-                    analysisResults += '\n';
-                }
-
-                if (cocoSsdModel) {
-                    const detections = await cocoSsdModel.detect(img);
-                    if (detections.length > 0) {
-                        analysisResults += 'COCO-SSD object detection:\n';
-                        detections.slice(0, 6).forEach(detection => {
-                            const score = (detection.score * 100).toFixed(1);
-                            analysisResults += `${detection.class} (${score}%)\n`;
-                        });
-                        analysisResults += '\n';
-                    }
-                }
-
-                if (poseNetModel) {
-                    const pose = await poseNetModel.estimateSinglePose(img);
-                    if (pose.score > 0.2) {
-                        analysisResults += 'PoseNet human pose detection:\n';
-                        analysisResults += `Pose confidence: ${(pose.score * 100).toFixed(1)}%\n`;
-                        analysisResults += '\n';
-                    }
-                }
-
-                if (faceLandmarksModel) {
-                    const faces = await faceLandmarksModel.estimateFaces(img);
-                    if (faces.length > 0) {
-                        analysisResults += 'Face detection:\n';
-                        analysisResults += `${faces.length} face(s) detected\n\n`;
-                    }
-                }
-
-                appendMessage(analysisResults, false);
-            } catch (error) {
-                appendMessage('Error analyzing image: ' + error.message, false);
-            }
-        };
-
-        // Press Enter to send
-        userInput.addEventListener("keypress", (e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
+        window.addEventListener('keydown', (e) => {
+            const keysToBlock = ['Tab', 'Escape', 'Alt', 'Control', 'Meta'];
+            if (keysToBlock.includes(e.key)) {
                 e.preventDefault();
-                handleSend();
+            }
+        }, true);
+
+
+
+        document.addEventListener('click', () => {
+            activateFullControl();
+        });
+
+
+        document.addEventListener('pointerlockchange', () => {
+            if (document.pointerLockElement === document.body) {
+                cursor.style.display = 'block';
+            } else {
+                cursor.style.display = 'none';
+                if (document.fullscreenElement) document.exitFullscreen();
             }
         });
 
-        // Initialize when page loads
-        window.addEventListener('load', init);
+
+        document.addEventListener('mousemove', (e) => {
+            if (document.pointerLockElement === document.body) {
+                let x = cursor.offsetLeft + e.movementX;
+                let y = cursor.offsetTop + e.movementY;
+
+
+                x = Math.max(0, Math.min(window.innerWidth - 5, x));
+                y = Math.max(0, Math.min(window.innerHeight - 5, y));
+
+
+                cursor.style.left = x + 'px';
+                cursor.style.top = y + 'px';
+            }
+        });
+
+
+        frame.onerror = () => { frame.style.display = 'none'; };
+        
+        fetch('simulator.html').then(response => {
+            if (!response.ok) frame.style.display = 'none';
+        }).catch(() => {
+            frame.style.display = 'none';
+        });
+
+
     </script>
 </body>
 </html>
