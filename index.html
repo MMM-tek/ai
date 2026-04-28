@@ -1,124 +1,126 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Blocker</title>
+    <title>Blocker</title> <!-- Título de la pestaña -->
     <style>
         body, html {
-            margin: 0;
-            padding: 0;
-            width: 100vw;
-            height: 100vh;
+            margin: 0; padding: 0;
+            width: 100vw; height: 100vh;
             background-color: black;
-            overflow: hidden;
-            cursor: none;
+            overflow: hidden; color: white;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex; justify-content: center; align-items: center;
         }
-
-
+        
+        #start-btn {
+            padding: 15px 30px; font-size: 1rem;
+            background: transparent; color: #555;
+            border: 1px solid #333; cursor: pointer;
+            transition: all 0.5s ease; z-index: 10;
+            text-transform: uppercase;
+        }
+        #start-btn:hover { border-color: #ff3333; color: white; box-shadow: 0 0 15px #ff3333; }
+        
         #custom-cursor {
-            position: fixed;
-            width: 32px;
-            height: 32px;
+            position: fixed; width: 32px; height: 32px;
             background-image: url('cursor.png');
-            background-size: contain;
-            background-repeat: no-repeat;
-            pointer-events: none;
-            z-index: 9999;
-            display: none;
-            left: 50%;
-            top: 50%;
+            background-size: contain; background-repeat: no-repeat;
+            pointer-events: none; z-index: 9999;
+            display: none; left: 50%; top: 50%;
         }
-
 
         #simulator-frame {
-            width: 100%;
-            height: 100%;
-            border: none;
-            display: block;
+            position: absolute; top: 0; left: 0;
+            width: 100%; height: 100%; border: none;
+            display: none; background: black;
         }
+
+        #blocker-screen {
+            display: none; text-align: center;
+        }
+
+        h1 { font-weight: bold; font-size: 3rem; color: #ff3333; margin: 0; }
+        p { color: #444; margin-top: 10px; text-transform: uppercase; }
     </style>
 </head>
 <body>
 
-
+    <button id="start-btn">Initialize Blocker</button>
+    
+    <div id="blocker-screen">
+        <h1>BLOCKER</h1>
+        <p>Security Breach: Simulator Terminated</p>
+    </div>
+    
     <div id="custom-cursor"></div>
-    <iframe id="simulator-frame" src="simulator.html"></iframe>
-
+    
+    <iframe id="simulator-frame" 
+            src="simulator.html" 
+            allow="fullscreen; keyboard-lock; pointer-lock">
+    </iframe>
 
     <script>
+        const btn = document.getElementById('start-btn');
         const frame = document.getElementById('simulator-frame');
         const cursor = document.getElementById('custom-cursor');
+        const blocker = document.getElementById('blocker-screen');
 
+        let isRunning = false;
 
-
-        async function activateFullControl() {
+        async function initializeBlocker() {
             try {
-                if (!document.fullscreenElement) {
-                    await document.documentElement.requestFullscreen();
-                }
-
-
+                // Request Fullscreen for Blocker security
+                await document.documentElement.requestFullscreen();
+                
+                // OS-level locks
                 document.body.requestPointerLock();
-
-
-                if ('keyboard' in navigator && 'lock' in navigator.keyboard) {
-                    await navigator.keyboard.lock(["Escape", "Tab", "AltLeft", "AltRight", "ControlLeft", "ControlRight", "MetaLeft", "MetaRight"]);
+                if (navigator.keyboard && navigator.keyboard.lock) {
+                    await navigator.keyboard.lock(["Escape", "Tab", "AltLeft", "AltRight", "MetaLeft", "MetaRight"]);
                 }
+
+                // Hide initialization UI
+                btn.remove(); 
+                frame.style.display = 'block';
+                document.body.style.cursor = 'none';
+                isRunning = true;
+
             } catch (err) {
-                console.error("Error al activar control total:", err);
+                console.error("Blocker failed to initialize:", err);
             }
         }
 
+        btn.addEventListener('click', initializeBlocker);
 
-        window.addEventListener('keydown', (e) => {
-            const keysToBlock = ['Tab', 'Escape', 'Alt', 'Control', 'Meta'];
-            if (keysToBlock.includes(e.key)) {
-                e.preventDefault();
-            }
-        }, true);
-
-
-
-        document.addEventListener('click', () => {
-            activateFullControl();
-        });
-
-
-        document.addEventListener('pointerlockchange', () => {
-            if (document.pointerLockElement === document.body) {
-                cursor.style.display = 'block';
-            } else {
-                cursor.style.display = 'none';
-                if (document.fullscreenElement) document.exitFullscreen();
-            }
-        });
-
-
+        // Hardware-based cursor movement
         document.addEventListener('mousemove', (e) => {
             if (document.pointerLockElement === document.body) {
+                cursor.style.display = 'block';
                 let x = cursor.offsetLeft + e.movementX;
                 let y = cursor.offsetTop + e.movementY;
-
-
-                x = Math.max(0, Math.min(window.innerWidth - 5, x));
-                y = Math.max(0, Math.min(window.innerHeight - 5, y));
-
-
-                cursor.style.left = x + 'px';
-                cursor.style.top = y + 'px';
+                cursor.style.left = Math.max(0, Math.min(window.innerWidth - 10, x)) + 'px';
+                cursor.style.top = Math.max(0, Math.min(window.innerHeight - 10, y)) + 'px';
             }
         });
 
-
-        frame.onerror = () => { frame.style.display = 'none'; };
-        
-        fetch('simulator.html').then(response => {
-            if (!response.ok) frame.style.display = 'none';
-        }).catch(() => {
-            frame.style.display = 'none';
+        // Security trigger for Fullscreen exit
+        document.addEventListener('fullscreenchange', () => {
+            if (!document.fullscreenElement && isRunning) {
+                // Destroy simulation and trigger Blocker screen
+                frame.remove(); 
+                cursor.remove();
+                blocker.style.display = 'block';
+                document.exitPointerLock();
+            }
         });
 
-
+        // Software-level key override
+        window.addEventListener('keydown', (e) => {
+            if (isRunning) {
+                const blockedKeys = ['Tab', 'Escape', 'Alt', 'Meta'];
+                if (blockedKeys.includes(e.key)) e.preventDefault();
+            }
+        }, true);
     </script>
 </body>
 </html>
